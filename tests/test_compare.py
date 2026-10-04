@@ -43,7 +43,7 @@ def test_recommend_prefers_no_support_within_15_percent():
 
 
 def test_recommend_fastest_when_clean_option_too_slow():
-    best, reason = compare.recommend([opt("Lying down", 130), opt("Standing", 100, support=2)])
+    best, reason = compare.recommend([opt("Lying down", 140), opt("Standing", 100, support=2)])
     assert best["label"] == "Standing" and reason.endswith(".")
 
 

@@ -1,0 +1,14 @@
+name: Drill bit box
+request: A box for my drill bits with a lid that slides on.
+parameters:
+  inside_length: 120.0
+  inside_width: 60.0
+  inside_height: 25.0
+  wall: 3.0
+  floor: 2.0
+  lid_thickness: 2.0
+  groove_depth: 1.6        # how far the lid's edges sit into the walls
+measurements: {}
+split: {joint: peg, fit: snug}
+notes: []
+feedback: []

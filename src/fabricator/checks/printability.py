@@ -15,7 +15,7 @@ MIN_CONTACT_FRACTION = 0.10
 TALL_RATIO = 4.0
 WARP_MM = 150.0
 WARP_MATERIALS = {"ABS", "ASA", "PC", "NYLON", "PA"}
-DROOP_DIAMETER = 8.0
+DROOP_DIAMETER = 12.0  # smaller sideways holes (screw holes, countersinks) print fine
 
 
 def _hull_area(verts) -> float:
@@ -127,7 +127,9 @@ def check_part(part, placed, mesh, ctx, choice=None) -> list[Check]:
         ))
 
     # ---- tall and thin ----
-    base = float(min(size[0], size[1]))
+    # Judge stability by the area the footprint covers, not its narrowest side: an L-shaped
+    # bracket standing up is steadier than a thin plank of the same depth.
+    base = float(np.sqrt(_hull_area(verts))) if len(verts) >= 3 else float(min(size[0], size[1]))
     ratio = float(size[2]) / base if base > 1e-6 else 0.0
     if ratio > TALL_RATIO:
         out.append(Check(

@@ -1,0 +1,17 @@
+name: Shelf
+request: A shelf 600 mm wide with a lip at the front, screwed to the wall.
+parameters:
+  width: 600.0
+  depth: 120.0
+  thickness: 18.0
+  lip_height: 10.0
+  lip_thickness: 4.0
+  rail_height: 40.0        # strip along the back that takes the wall screws
+  rail_thickness: 8.0
+  screw_count: 4
+  screw: "#8"
+  corner_radius: 4.0
+measurements: {}
+split: {joint: peg, fit: snug}
+notes: []
+feedback: []

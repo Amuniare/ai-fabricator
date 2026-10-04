@@ -1,0 +1,17 @@
+name: Battery holder
+request: A wall rack for three tool batteries, screwed to the wall.
+parameters:
+  battery_count: 3
+  battery_width: 76.0      # side to side
+  battery_depth: 115.0     # front to back
+  hold_depth: 30.0         # how far each battery sits down into its pocket
+  spacing: 6.0             # wall between pockets
+  wall: 3.0
+  back_height: 60.0        # height of the back plate above the pockets
+  plate_thickness: 10.0     # thick enough for pegs where it splits, and for the weight
+  corner_radius: 3.0
+  screw: "#8"
+measurements: {}
+split: {joint: peg, fit: snug}
+notes: []
+feedback: []

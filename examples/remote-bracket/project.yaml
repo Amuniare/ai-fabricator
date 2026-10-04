@@ -1,0 +1,16 @@
+name: Remote bracket
+request: A bracket to hold the garage remote by the door, two screws.
+parameters:
+  remote_width: 38.5       # side to side
+  remote_thickness: 16.0   # front to back
+  hold_depth: 45.0         # how far the remote sits down into the cradle
+  wall: 3.0
+  plate_width: 64.0
+  plate_height: 100.0
+  plate_thickness: 5.0
+  corner_radius: 4.0
+  screw: "#8"
+measurements: {}
+split: {joint: peg, fit: snug}
+notes: []
+feedback: []

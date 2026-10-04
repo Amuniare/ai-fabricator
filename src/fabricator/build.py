@@ -110,6 +110,8 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
     bed = slicer.printer_bed(settings)
     ctx = Context(settings, bed, project.path)
 
+    previous = _fingerprints_from(project.build_dir / "model.json")
+
     # Start clean so nothing stale is mistaken for this build's output.
     for sub in ("parts", "print", "pictures"):
         shutil.rmtree(project.build_dir / sub, ignore_errors=True)
@@ -141,6 +143,7 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
         bb = part.shape.bounding_box()
         info["size_mm"] = [round(bb.size.X, 2), round(bb.size.Y, 2), round(bb.size.Z, 2)]
         info["volume_cm3"] = round(part.shape.volume / 1000, 2)
+        info["fingerprint"] = fingerprint(part.shape)
         if part.printed:
             choice = orient.choose(part, bed, ctx)
             placed = orient.place_on_bed(part.shape, choice)
@@ -159,6 +162,10 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
     shots: list[Path] = []
     if pictures:
         shots = render.build_pictures(model, project.build_dir / "pictures", ctx)
+
+    changes = reprint_list(previous, part_info)
+    if changes:
+        messages.append(changes)
 
     summary = {
         "name": model.name,
@@ -188,6 +195,38 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
             summary["version"] = version["number"]
 
     return BuildResult(project, model, checks, status, shots, version, messages, summary)
+
+
+def fingerprint(shape) -> str:
+    """A short code that changes whenever a piece's shape changes (size, volume, surface)."""
+    import hashlib
+
+    bb = shape.bounding_box()
+    numbers = [shape.volume, shape.area, *tuple(bb.min), *tuple(bb.max)]
+    return hashlib.sha1(",".join(f"{v:.2f}" for v in numbers).encode()).hexdigest()[:12]
+
+
+def _fingerprints_from(path: Path) -> dict[str, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {p["id"]: p.get("fingerprint", "") for p in data.get("parts", []) if p.get("printed")}
+
+
+def reprint_list(previous: dict[str, str], parts: list[dict]) -> str:
+    """One sentence saying which printed pieces changed since the last build, if there are several."""
+    printed = [p for p in parts if p["printed"]]
+    if not previous or len(printed) < 2:
+        return ""
+    changed = [p["id"] for p in printed if previous.get(p["id"]) != p["fingerprint"]]
+    same = [p["id"] for p in printed if p["id"] not in changed]
+    if not changed:
+        return "No pieces changed shape since the last build."
+    if not same:
+        return "Every piece changed shape since the last build."
+    return (f"Changed since the last build: {', '.join(changed)}. "
+            f"Unchanged: {', '.join(same)} — no need to reprint those if they're already printed.")
 
 
 def hardware_list(model: Model) -> dict[str, int]:

@@ -48,6 +48,11 @@ An example:
 - Learns from your feedback: tell it a joint was "too tight" or "too loose" and it adjusts for your printer and filament
 - Makes a finished folder with the parts, print files and a short guide
 
+The `examples` folder has four finished designs to try or start from: a wall bracket for a
+remote, a battery holder, a 600 mm shelf that comes in 4 pieces, and a drill-bit box with
+a sliding lid. Ask Claude to "start from the shelf example", or run
+`uv run fabricator new "My shelf" -e shelf`.
+
 ## Where your work is kept
 
 In **Documents\Fabricator Projects**, one folder per object. This is separate from the

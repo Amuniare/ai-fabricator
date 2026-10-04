@@ -26,6 +26,8 @@ FLAT_NZ = -0.99  # "horizontal and facing down"
 BED_TOL = 0.15  # mm above the lowest point still counts as lying on the bed
 SUPPORT_AREA_MM2 = 25.0  # overhang area that is worth adding supports for
 SHORT_BRIDGE_MM = 8.0  # a flat ceiling this narrow prints fine unsupported
+SMALL_ARCH_MM = 10.0  # a curved overhang this narrow (hole tops, peg undersides) needs no support
+SMALL_ARCH_RISE_MM = 3.0  # ...as long as it rises no more than this
 BED_MARGIN = 1.0  # mm kept clear on each side of the bed
 
 _AXIS_WORDS = {  # which face is down -> words (front = -Y, left = -X)
@@ -87,6 +89,29 @@ def _components(mesh, mask: np.ndarray) -> list[np.ndarray]:
     return [idx[labels == k] for k in range(n)]
 
 
+def _span(tris_xy: np.ndarray, step: float = 0.25) -> float:
+    """How far a flat ceiling reaches across at its widest point, in mm.
+
+    That's what decides whether it sags: a U-shaped ledge 1.6 mm deep is easy to print
+    even when the U is 60 mm wide. Found by drawing the ceiling on a fine grid and
+    measuring the widest circle that fits inside it.
+    """
+    from PIL import Image, ImageDraw
+    from scipy.ndimage import distance_transform_edt
+
+    lo = tris_xy.reshape(-1, 2).min(axis=0) - 2 * step
+    hi = tris_xy.reshape(-1, 2).max(axis=0) + 2 * step
+    size = np.ceil((hi - lo) / step).astype(int) + 1
+    if size.prod() > 16_000_000:  # very large ceiling: coarser grid
+        return _span(tris_xy, step * 2)
+    img = Image.new("1", (int(size[0]), int(size[1])), 0)
+    draw = ImageDraw.Draw(img)
+    for t in (tris_xy - lo) / step:
+        draw.polygon([tuple(p) for p in t], fill=1, outline=1)
+    inside = np.array(img, dtype=bool)
+    return float(2 * distance_transform_edt(inside).max() * step)
+
+
 def analyze(mesh, R: np.ndarray | None = None) -> dict:
     """Overhang, bed contact and size of ``mesh`` after turning it by ``R`` and setting it down.
 
@@ -112,12 +137,19 @@ def analyze(mesh, R: np.ndarray | None = None) -> dict:
     for comp in _components(mesh, flat):
         pts = tri[comp].reshape(-1, 3)
         ext = pts.max(axis=0)[:2] - pts.min(axis=0)[:2]
-        span = float(ext.min())
+        span = _span(tri[comp][:, :, :2])
         area = float(areas[comp].sum())
         centre = (tri[comp].mean(axis=1) * areas[comp, None]).sum(axis=0) / max(area, 1e-9)
         groups.append({"area": area, "span": span, "length": float(ext.max()), "centre": centre, "faces": comp})
         if span > SHORT_BRIDGE_MM:
             support_mask[comp] = True
+    # Small arches print without support: the top of a sideways hole, the underside of a
+    # sideways peg. Supporting them would waste plastic and be hard to remove.
+    for comp in _components(mesh, support_mask):
+        pts = tri[comp].reshape(-1, 3)
+        ext = pts.max(axis=0) - pts.min(axis=0)
+        if float(ext[:2].min()) <= SMALL_ARCH_MM and float(ext[2]) <= SMALL_ARCH_RISE_MM:
+            support_mask[comp] = False
     support_area = float(areas[support_mask].sum())
     size = verts.max(axis=0) - verts.min(axis=0)
     return {

@@ -87,7 +87,7 @@ def cmd_new(args) -> int:
     for item in args.param or []:
         key, _, value = item.partition("=")
         params[key.strip()] = _parse_value(value)
-    project = Project.create(args.name, args.description or "", params or None)
+    project = Project.create(args.name, args.description or "", params or None, example=args.example)
     _out(args, f"Created project '{project.name}' at {project.path}\n"
                f"Edit design.py and project.yaml there, then run: fabricator build \"{project.path.name}\"",
          {"path": str(project.path), "name": project.name})
@@ -240,7 +240,8 @@ def cmd_parts(args) -> int:
         lines.append("How they join:")
         for j in s["joints"]:
             hw = f", using {', '.join(j['hardware'])}" if j["hardware"] else ""
-            lines.append(f"  {j['a']} + {j['b']}: {j['kind']} ({j['fit']} fit){hw}")
+            note = f" — {j['note']}" if j.get("note") else ""
+            lines.append(f"  {j['a']} + {j['b']}: {j['kind']} ({j['fit']} fit){hw}{note}")
     _out(args, "\n".join(lines), {"parts": s["parts"], "joints": s["joints"]})
     return 0
 
@@ -341,7 +342,10 @@ def cmd_feedback(args) -> int:
     project = Project.find(args.project)
     result = feedback.record(project, Settings.load(), fit=args.fit, result=args.result,
                              part=args.part, note=args.note)
-    _out(args, result["message"], result)
+    text = result["message"]
+    if result.get("suggestions"):
+        text += "\n" + "\n".join(f"  - {idea}" for idea in result["suggestions"])
+    _out(args, text, result)
     return 0
 
 
@@ -395,6 +399,7 @@ def parser() -> argparse.ArgumentParser:
     sp = add("new", cmd_new, "start a project")
     sp.add_argument("name"); sp.add_argument("--description", "-d")
     sp.add_argument("--param", "-p", action="append", help="name=value, repeatable")
+    sp.add_argument("--example", "-e", help="start from an example in the examples folder")
     add("list", cmd_list, "list projects")
     sp = add("param", cmd_param, "show or change parameters")
     project_arg(sp); sp.add_argument("--set", "-s", action="append", help="name=value, repeatable")

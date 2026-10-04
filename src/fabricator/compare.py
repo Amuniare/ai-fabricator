@@ -16,7 +16,7 @@ from pathlib import Path
 from . import slicer
 from .project import Project, ProjectError
 
-NO_SUPPORT_TIME_ALLOWANCE = 0.15  # an option without supports may cost this much more time and still win
+NO_SUPPORT_TIME_ALLOWANCE = 0.35  # a support-free option may take up to 35% longer
 SPLIT_JOINTS = ("peg", "dowel", "screw")
 
 
@@ -49,23 +49,32 @@ def _pick_part(data: dict, part: str | None) -> dict:
 
 
 def recommend(options: list[dict]) -> tuple[dict, str]:
-    """The no-support option if it costs <= 15% more time than the fastest, else the fastest."""
+    """Pick one option and say why in a sentence that matches the numbers.
+
+    Supports are wasted plastic and leave rough marks, so an option without them wins
+    unless it takes much longer (more than NO_SUPPORT_TIME_ALLOWANCE) than the fastest.
+    """
     key = lambda o: (round(o["minutes"], 1), o["grams"])  # noqa: E731  ties go to fewer grams
     fastest = min(options, key=key)
-    clean = [o for o in options if not (o.get("support_needed") or o.get("support_grams", 0) > 0.05)]
+
+    def needs_support(o):
+        return bool(o.get("support_needed")) or o.get("support_grams", 0) > 0.05
+
+    clean = [o for o in options if not needs_support(o)]
     if clean:
         best_clean = min(clean, key=key)
+        if best_clean is fastest:
+            return best_clean, (f"{best_clean['label']} is the quickest at {_fmt(best_clean['minutes'])} "
+                                f"and needs no supports.")
+        extra = best_clean["minutes"] - fastest["minutes"]
         if best_clean["minutes"] <= fastest["minutes"] * (1 + NO_SUPPORT_TIME_ALLOWANCE):
-            if best_clean is fastest:
-                return best_clean, (f"{best_clean['label']} is the quickest at {_fmt(best_clean['minutes'])} "
-                                    f"and needs no supports to clean off.")
-            extra = best_clean["minutes"] - fastest["minutes"]
-            return best_clean, (f"{best_clean['label']} needs no supports and takes {_fmt(best_clean['minutes'])}, "
-                                f"only {_fmt(extra)} longer than the fastest option, so the print is cleaner.")
-    if fastest.get("support_grams", 0) > 0.05 or fastest.get("support_needed"):
-        return fastest, (f"{fastest['label']} is the quickest at {_fmt(fastest['minutes'])}; "
-                         f"every option needs supports or costs much more time.")
-    return fastest, f"{fastest['label']} is the quickest at {_fmt(fastest['minutes'])}."
+            return best_clean, (f"{best_clean['label']} needs no supports. It takes {_fmt(extra)} longer than "
+                                f"{fastest['label']}, but wastes no plastic and leaves cleaner surfaces.")
+        return fastest, (f"{fastest['label']} is quickest at {_fmt(fastest['minutes'])} but needs "
+                         f"{fastest.get('support_grams', 0):.0f} g of supports; {best_clean['label']} needs none "
+                         f"but takes {_fmt(extra)} longer.")
+    return fastest, (f"{fastest['label']} is the quickest at {_fmt(fastest['minutes'])}. "
+                     f"Every option needs some supports.")
 
 
 def compare(project: Project, settings, part: str | None = None, what: str = "orientation") -> dict:

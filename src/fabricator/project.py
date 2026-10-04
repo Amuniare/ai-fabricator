@@ -28,6 +28,7 @@ import yaml
 
 from . import settings as settings_mod
 
+EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 PROJECT_FILE = "project.yaml"
 DESIGN_FILE = "design.py"
 GENERATED = ["build/", "slices/", "package/", "__pycache__/", "*.pyc"]
@@ -107,8 +108,16 @@ class Project:
 
     # ---- creating -------------------------------------------------------------
     @classmethod
-    def create(cls, name: str, description: str = "", parameters: dict | None = None) -> "Project":
+    def create(cls, name: str, description: str = "", parameters: dict | None = None,
+               example: str | None = None) -> "Project":
+        """Start a project, optionally from one of the examples (its design and parameters)."""
         root = settings_mod.home()
+        source = None
+        if example:
+            source = EXAMPLES_DIR / slugify(example)
+            if not (source / DESIGN_FILE).exists():
+                known = ", ".join(sorted(p.name for p in EXAMPLES_DIR.iterdir() if p.is_dir()))
+                raise ProjectError(f"No example called '{example}'. Examples: {known}")
         path = root / slugify(name)
         if path.exists():
             raise ProjectError(f"A project folder called '{path.name}' already exists.")
@@ -125,10 +134,18 @@ class Project:
             "notes": [],
             "feedback": [],
         }
+        if source is not None:
+            example_data = yaml.safe_load((source / PROJECT_FILE).read_text(encoding="utf-8")) or {}
+            data["parameters"] = {**example_data.get("parameters", {}), **(parameters or {})}
+            data["split"] = example_data.get("split", data["split"])
+            data["example"] = source.name
         (path / PROJECT_FILE).write_text(_dump(data), encoding="utf-8")
-        (path / DESIGN_FILE).write_text(
-            DESIGN_TEMPLATE.format(name=name, description=description or name), encoding="utf-8"
-        )
+        if source is not None:
+            shutil.copyfile(source / DESIGN_FILE, path / DESIGN_FILE)
+        else:
+            (path / DESIGN_FILE).write_text(
+                DESIGN_TEMPLATE.format(name=name, description=description or name), encoding="utf-8"
+            )
         (path / "sources.yaml").write_text("sources: []\nimports: []\n", encoding="utf-8")
         (path / ".gitignore").write_text("\n".join(GENERATED) + "\n", encoding="utf-8")
         project = cls(path)

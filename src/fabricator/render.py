@@ -72,8 +72,20 @@ class Item:
 
 
 def item_from_mesh(pid: str, mesh, color: str, alpha: float = 1.0, label: bool = True) -> Item:
-    tris = mesh.vertices[mesh.faces]
-    return Item(pid, tris, mesh.face_normals, color, alpha, label)
+    # Pictures sort triangles by depth. A long thin triangle (a flat lid, a shelf top)
+    # has one depth for its whole length and can be drawn over things in front of it, so
+    # break big triangles into small ones first.
+    import trimesh
+
+    normals = mesh.face_normals
+    max_edge = max(float(mesh.extents.max()) / 20, 2.0)
+    try:
+        verts, faces, index = trimesh.remesh.subdivide_to_size(
+            mesh.vertices, mesh.faces, max_edge=max_edge, max_iter=8, return_index=True)
+        tris, normals = verts[faces], normals[index]
+    except Exception:
+        tris = mesh.vertices[mesh.faces]
+    return Item(pid, tris, normals, color, alpha, label)
 
 
 def _basis(view: str):
@@ -178,24 +190,29 @@ def _single(items, view, path, title, labels=False, transparent=False, extra=Non
 # ---- layout helpers ---------------------------------------------------------------------
 
 def exploded_items(items: list[Item]) -> list[Item]:
-    """Push each printed part away from the middle of the assembly."""
+    """Pull printed parts apart so every seam shows.
+
+    The biggest part stays where it is; every other part moves away from it, further the
+    further away it already was, and always at least a third of its own size (a lid on a
+    box lifts clear; a row of shelf pieces spreads out evenly).
+    """
     moving = [i for i in items if i.alpha >= 1.0]
     if len(moving) < 2:
         return items
-    lo = np.min([i.lo for i in moving], axis=0)
-    hi = np.max([i.hi for i in moving], axis=0)
-    centre = (lo + hi) / 2
-    reach = 0.45 * float((hi - lo).max())
+    anchor = max(moving, key=lambda i: float(np.prod(np.maximum(i.hi - i.lo, 1e-3))))
+    origin = (anchor.lo + anchor.hi) / 2
     out = []
     for i in items:
-        if i.alpha < 1.0:
+        if i.alpha < 1.0 or i is anchor:
             out.append(i)
             continue
-        d = (i.lo + i.hi) / 2 - centre
-        d = d / np.linalg.norm(d) if np.linalg.norm(d) > 1e-6 else np.array([0, 0, 1.0])
-        if abs(d[2]) < 0.2 and len(moving) <= 2:
-            d = d * 1.0
-        out.append(i.moved(d * reach))
+        d = (i.lo + i.hi) / 2 - origin
+        n = float(np.linalg.norm(d))
+        direction = d / n if n > 1e-6 else np.array([0, 0, 1.0])
+        if n > 1e-6 and abs(direction[2]) > 0.35:  # mostly above or below: go straight up/down
+            direction = np.array([0, 0, np.sign(direction[2])])
+        least = 0.35 * float((i.hi - i.lo).max())
+        out.append(i.moved(direction * max(0.6 * n, least)))
     return out
 
 

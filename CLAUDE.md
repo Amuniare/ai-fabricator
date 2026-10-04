@@ -211,6 +211,43 @@ What `Model` gives you:
 - Optional `face_down="-Z"` on `model.add` when one side must be on the bed (for
   example a visible face that should come out smooth on top).
 
+Joining separate parts — `from fabricator import joints`. Every helper takes the two
+shapes and returns new ones with the joint cut in, plus what `model.join` needs:
+
+```python
+r = joints.peg(base, lid, at=[(-30, 0, 20), (30, 0, 20)], direction=(0, 0, 1), ctx=ctx)
+a = model.add(r.a, "Base")
+b = model.add(r.b, "Lid")
+r.join(model, a, b)   # records the joint and its gap so the checks can measure it
+```
+
+`a` gets the sticking-out part (peg, tongue, hook, screw head), `b` the hole or slot.
+`at` is a point (or list of points) on the face where they meet; `direction` points from
+`a` into `b`. Always pass `ctx=ctx` so gaps come from the user's settings.
+
+- `joints.peg(a, b, at, direction, ctx=ctx, diameter=6, fit="snug")` — pegs on `a` into holes in `b`.
+- `joints.dowel(..., pin="printed" | "steel")` — holes in both, joined by separate pins.
+- `joints.screw(a, b, at, direction, ctx=ctx, size="M3", head="cap", nut="trap" | "insert")`
+  — screw through `a` into a nut pocket or heat-set insert in `b`; picks a stock length.
+- `joints.dovetail(a, b, at, direction, slide, ctx=ctx, width=10, height=6)` — slides together along `slide`.
+- `joints.tongue_groove(a, b, at, direction, along, ctx=ctx)` — straight ridge into a groove.
+- `joints.snap_hook(a, b, at, direction, hook, ctx=ctx, length=12)` — a bendy hook that
+  clicks into a recess; its catch is sized so PLA bends without breaking.
+
+Holes for bought parts — `ctx.hw`, each returns a solid to subtract (`part -= ...`):
+`screw_hole(size, length, head, at, direction)`, `nut_trap(size, at, direction)`,
+`insert_hole(size, at, direction)`, `magnet_pocket(diameter, thickness, at, direction)`,
+`bearing_seat(code, at, direction)`, `wall_screw_hole(size="#8", at, direction, length)`.
+`direction` points into the part, from where the screw head or magnet goes in.
+
+Worked examples live in this folder's `examples/` (remote bracket, battery holder, a
+600 mm shelf that splits into 4 pieces, a box with a sliding lid). Start from one with
+`uv run fabricator new "My shelf" -e shelf` when the request is close, then change it.
+
+Directions: **-Y is the front** (what the "front" picture shows), +Y the back, +Z up,
++X to the right. For anything that mounts on a wall, put the wall at y = 0 and build the
+object out towards -Y, so the pictures show it the way the user will see it.
+
 Design for printing:
 
 - Model parts where they sit in the finished object; the build decides how each lies on
