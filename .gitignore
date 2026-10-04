@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+# Personal settings Claude Code writes on each machine
+.claude/settings.local.json
+# Never commit anyone's projects or printer details
+Fabricator Projects/

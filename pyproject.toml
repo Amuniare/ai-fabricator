@@ -1,0 +1,30 @@
+[project]
+name = "fabricator"
+version = "0.1.0"
+description = "Describe an object in plain words, review pictures, and get a print-ready file for a Bambu printer."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "build123d>=0.13.0",
+    "manifold3d>=3.5.4",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pyyaml>=6.0.3",
+    "rtree>=1.4.1",
+    "scipy>=1.18.1",
+    "trimesh>=5.1.1",
+]
+
+[project.scripts]
+fabricator = "fabricator.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

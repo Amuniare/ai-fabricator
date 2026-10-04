@@ -1,0 +1,21 @@
+# Gap per side, in millimetres, between two printed surfaces that fit together.
+# A peg in a hole with a 0.20 gap is 0.40 mm smaller in diameter than the hole.
+#
+# These defaults are known to work on Bambu printers with a 0.4 mm nozzle, so parts
+# fit on the first print with no test pieces. Feedback on real prints adjusts them
+# per printer and material (stored in the user's settings, never here).
+#
+#   press   - pushed in firmly, stays put without glue
+#   snug    - goes together by hand, holds by itself, can be taken apart
+#   sliding - slides easily, for lids and drawers
+#   loose   - drops in with visible play, for things that must move freely
+#   hole    - extra size added to holes made for bought parts (screws, magnets)
+materials:
+  PLA:  {press: 0.05, snug: 0.10, sliding: 0.20, loose: 0.35, hole: 0.15}
+  PETG: {press: 0.08, snug: 0.15, sliding: 0.25, loose: 0.40, hole: 0.20}
+  ABS:  {press: 0.08, snug: 0.15, sliding: 0.25, loose: 0.40, hole: 0.20}
+  ASA:  {press: 0.08, snug: 0.15, sliding: 0.25, loose: 0.40, hole: 0.20}
+  TPU:  {press: 0.00, snug: 0.10, sliding: 0.30, loose: 0.50, hole: 0.15}
+
+# How much each "too tight" / "too loose" report moves a gap.
+feedback_step: 0.05
