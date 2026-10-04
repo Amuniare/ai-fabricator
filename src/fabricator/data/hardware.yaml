@@ -1,0 +1,70 @@
+# Real standard dimensions for common bought hardware. All lengths in millimetres.
+# Hole sizes Fabricator cuts are worked out from these in library.py (plus the printer's fit gaps).
+
+# Metric screws.
+#   pitch               - ISO 261 coarse thread pitch
+#   clearance_*         - ISO 273 clearance hole diameters: close / normal (medium) / coarse
+#   cap_head_d/h        - ISO 4762 socket head cap screw: head diameter and head height
+#   csk_head_d          - ISO 10642 countersunk (flat) head, theoretical maximum head diameter; 90 degree cone
+#   button_head_d/h     - ISO 7380 button head socket screw: head diameter and head height
+#   hex_key             - hex key (Allen key) size, ISO 4762
+#   lengths             - common stock lengths
+screws:
+  M2:   {pitch: 0.4,  clearance_close: 2.2, clearance: 2.4, clearance_coarse: 2.6, cap_head_d: 3.8,  cap_head_h: 2.0, csk_head_d: 4.4,   button_head_d: 3.5,  button_head_h: 1.3,  hex_key: 1.5, lengths: [4, 5, 6, 8, 10, 12, 16, 20]}
+  M2.5: {pitch: 0.45, clearance_close: 2.7, clearance: 2.9, clearance_coarse: 3.1, cap_head_d: 4.5,  cap_head_h: 2.5, csk_head_d: 5.5,   button_head_d: 4.6,  button_head_h: 1.5,  hex_key: 2.0, lengths: [5, 6, 8, 10, 12, 16, 20, 25]}
+  M3:   {pitch: 0.5,  clearance_close: 3.2, clearance: 3.4, clearance_coarse: 3.6, cap_head_d: 5.5,  cap_head_h: 3.0, csk_head_d: 6.72,  button_head_d: 5.7,  button_head_h: 1.65, hex_key: 2.5, lengths: [4, 5, 6, 8, 10, 12, 14, 16, 20, 25, 30, 35, 40, 50]}
+  M4:   {pitch: 0.7,  clearance_close: 4.3, clearance: 4.5, clearance_coarse: 4.8, cap_head_d: 7.0,  cap_head_h: 4.0, csk_head_d: 8.96,  button_head_d: 7.6,  button_head_h: 2.2,  hex_key: 3.0, lengths: [6, 8, 10, 12, 16, 20, 25, 30, 35, 40, 50]}
+  M5:   {pitch: 0.8,  clearance_close: 5.3, clearance: 5.5, clearance_coarse: 5.8, cap_head_d: 8.5,  cap_head_h: 5.0, csk_head_d: 11.2,  button_head_d: 9.5,  button_head_h: 2.75, hex_key: 4.0, lengths: [8, 10, 12, 16, 20, 25, 30, 40, 50, 60]}
+  M6:   {pitch: 1.0,  clearance_close: 6.4, clearance: 6.6, clearance_coarse: 7.0, cap_head_d: 10.0, cap_head_h: 6.0, csk_head_d: 13.44, button_head_d: 10.5, button_head_h: 3.3,  hex_key: 5.0, lengths: [10, 12, 16, 20, 25, 30, 40, 50, 60, 80]}
+  M8:   {pitch: 1.25, clearance_close: 8.4, clearance: 9.0, clearance_coarse: 10.0, cap_head_d: 13.0, cap_head_h: 8.0, csk_head_d: 17.92, button_head_d: 14.0, button_head_h: 4.4,  hex_key: 6.0, lengths: [12, 16, 20, 25, 30, 40, 50, 60, 80, 100]}
+
+# Hex nuts, ISO 4032 (style 1): across flats and thickness.
+nuts:
+  M2:   {across_flats: 4.0,  thickness: 1.6}
+  M2.5: {across_flats: 5.0,  thickness: 2.0}
+  M3:   {across_flats: 5.5,  thickness: 2.4}
+  M4:   {across_flats: 7.0,  thickness: 3.2}
+  M5:   {across_flats: 8.0,  thickness: 4.7}
+  M6:   {across_flats: 10.0, thickness: 5.2}
+  M8:   {across_flats: 13.0, thickness: 6.8}
+
+# Heat-set threaded inserts (common brass inserts, as sold by CNC Kitchen and similar).
+#   hole_d      - recommended hole diameter in the printed part
+#   length      - insert length
+#   hole_depth  - recommended hole depth (insert length plus about 1 mm for melted plastic)
+#   min_wall    - smallest wall to leave around the hole
+inserts:
+  M2:
+    standard: {hole_d: 3.2, length: 3.0, hole_depth: 4.0,  min_wall: 1.6}
+  M2.5:
+    standard: {hole_d: 3.6, length: 4.0, hole_depth: 5.0,  min_wall: 1.6}
+  M3:
+    short:    {hole_d: 4.0, length: 3.0, hole_depth: 4.0,  min_wall: 1.6}
+    standard: {hole_d: 4.0, length: 5.7, hole_depth: 6.7,  min_wall: 1.6}
+  M4:
+    standard: {hole_d: 5.6, length: 8.1, hole_depth: 9.1,  min_wall: 2.0}
+  M5:
+    standard: {hole_d: 6.4, length: 9.5, hole_depth: 10.5, min_wall: 2.0}
+
+# Disc magnets, diameter x thickness. Neodymium (N35 to N52) discs are typically
+# made to within +-0.1 mm on both dimensions.
+magnets:
+  tolerance: 0.1
+  sizes: ["3x2", "5x2", "6x2", "6x3", "8x2", "8x3", "10x2", "10x3", "12x3", "15x3", "20x3"]
+
+# Deep groove ball bearings, ISO 15 boundary dimensions: bore, outer diameter, width.
+bearings:
+  "623":  {bore: 3,  od: 10, width: 4}
+  "625":  {bore: 5,  od: 16, width: 5}
+  "608":  {bore: 8,  od: 22, width: 7}
+  "688":  {bore: 8,  od: 16, width: 5}
+  "6000": {bore: 10, od: 26, width: 8}
+  "6001": {bore: 12, od: 28, width: 8}
+  "6002": {bore: 15, od: 32, width: 9}
+
+# Wood screws for wall mounting (countersunk head, 90 degree countersink).
+# US gauge sizes (ASME B18.6.1): #6 thread is 3.5 mm (0.138 in), #8 is 4.2 mm (0.164 in).
+# clearance is a hole the thread passes through freely; head_d is the flat head diameter.
+wood_screws:
+  "#6": {thread_d: 3.5, clearance: 3.8, head_d: 7.0}
+  "#8": {thread_d: 4.2, clearance: 4.5, head_d: 8.2}

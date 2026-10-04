@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run fabricator:*)",
+      "Bash(fabricator:*)",
+      "Bash(code:*)",
+      "Read(./**)",
+      "Read(./docs/**)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(del /s:*)",
+      "Bash(rmdir /s:*)",
+      "Bash(format:*)"
+    ]
+  }
+}
