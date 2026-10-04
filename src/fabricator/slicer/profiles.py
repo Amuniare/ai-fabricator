@@ -7,6 +7,7 @@ inheritance, so ``merged`` does it here, and the result is written out for the s
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import json
 import os
@@ -23,12 +24,11 @@ KINDS = ("machine", "process", "filament")
 
 # ---- finding the slicer -------------------------------------------------------------
 
+
 def _resources_for(exe: Path, kind: str) -> Path | None:
     """The resources folder of an install, found next to the program."""
-    try:
+    with contextlib.suppress(OSError):
         exe = exe.resolve()
-    except OSError:
-        pass
     for base in (exe.parent, exe.parent.parent, exe.parent.parent.parent):
         for sub in ("resources", "Resources"):
             if (base / sub / "profiles").is_dir():
@@ -51,8 +51,12 @@ def _version(resources: Path | None) -> str | None:
 
 def _info(exe: Path, kind: str, resources: Path | None = None) -> dict:
     resources = resources or _resources_for(exe, kind)
-    return {"exe": str(exe), "resources": str(resources) if resources else None,
-            "kind": kind, "version": _version(resources)}
+    return {
+        "exe": str(exe),
+        "resources": str(resources) if resources else None,
+        "kind": kind,
+        "version": _version(resources),
+    }
 
 
 def _candidates(kind: str) -> list[Path]:
@@ -113,7 +117,7 @@ def require_slicer(settings: Settings) -> dict:
         raise ProjectError(
             "Bambu Studio isn't installed (or Fabricator can't find it). Install it free from "
             "https://bambulab.com/en/download/studio, open it once, then try again. "
-            "If it is installed somewhere unusual, run: fabricator setup --slicer-path \"<path to bambu-studio>\""
+            'If it is installed somewhere unusual, run: fabricator setup --slicer-path "<path to bambu-studio>"'
         )
     return info
 
@@ -173,12 +177,14 @@ def _machine_name(settings: Settings) -> str:
 
 # ---- printers ---------------------------------------------------------------------------
 
+
 def _bed_from_yaml(settings: Settings) -> tuple[float, float, float]:
     printers = load_data("printers.yaml")["printers"]
     if settings.printer not in printers:
         raise ProjectError(
             f"Fabricator doesn't know the build size of '{settings.printer}' and the slicer isn't "
-            "installed to look it up. Install Bambu Studio, then run setup again.")
+            "installed to look it up. Install Bambu Studio, then run setup again."
+        )
     return tuple(float(v) for v in printers[settings.printer]["bed"])  # type: ignore[return-value]
 
 
@@ -191,7 +197,8 @@ def printer_bed(settings: Settings) -> tuple[float, float, float]:
             xs, ys = [], []
             for pt in m["printable_area"]:
                 x, _, y = str(pt).partition("x")
-                xs.append(float(x)); ys.append(float(y))
+                xs.append(float(x))
+                ys.append(float(y))
             return (max(xs) - min(xs), max(ys) - min(ys), float(m["printable_height"]))
         except (ProjectError, KeyError, ValueError):
             pass
@@ -204,7 +211,7 @@ def _models(resources) -> dict[str, str]:
     for vendor, per_kind in index(resources).items():
         if vendor != "BBL":  # only Bambu printers are supported
             continue
-        for name, path in per_kind["machine"].items():
+        for name in per_kind["machine"]:
             try:
                 data = merged(resources, "machine", name, vendor)
             except ProjectError:
@@ -251,10 +258,13 @@ def match_printer(text: str, settings: Settings | None = None) -> str:
     raise ProjectError(
         f"I couldn't tell which printer '{text}' is. "
         + ("Did you mean: " if partial or pool is not names else "Some printers I know: ")
-        + ", ".join(pool[:6]) + "?")
+        + ", ".join(pool[:6])
+        + "?"
+    )
 
 
 # ---- choosing profiles for a project --------------------------------------------------------
+
 
 def _compatible(profile: dict, machine: str) -> bool:
     if str(profile.get("instantiation", "true")).lower() == "false":
@@ -280,30 +290,37 @@ def choose_filament(resources, settings: Settings, machine: dict) -> tuple[str, 
             if _compatible(prof, machine_name):
                 has_nozzle = " nozzle" in name
                 # Prefer the variant made for this nozzle, then Bambu's own, then the plainest name.
-                rank = (0 if nozzle_text in name else (1 if not has_nozzle else 2),
-                        0 if name.startswith("Bambu") else 1, len(name))
+                rank = (
+                    0 if nozzle_text in name else (1 if not has_nozzle else 2),
+                    0 if name.startswith("Bambu") else 1,
+                    len(name),
+                )
                 found.append((rank, name, prof))
         return sorted(found, key=lambda t: t[0])
 
     found = search(lambda n: bool(wanted) and n.startswith(wanted))
     if not found:
+
         def right_type(n: str) -> bool:
             try:
                 t = merged(resources, "filament", n, "BBL").get("filament_type", [""])
                 return str(t[0] if isinstance(t, list) else t).upper() == material
             except ProjectError:
                 return False
+
         found = search(right_type)
     if not found:
         raise ProjectError(
             f"Bambu Studio has no {settings.material} settings for the {settings.printer} with a "
             f"{settings.nozzle:g} mm nozzle (some printers can't print every material). "
-            "Pick another material with 'fabricator setup --material PLA'.")
+            "Pick another material with 'fabricator setup --material PLA'."
+        )
     return found[0][1], found[0][2]
 
 
-def project_profiles(settings: Settings, print_options: dict | None = None, supports: bool = False,
-                     info: dict | None = None) -> dict:
+def project_profiles(
+    settings: Settings, print_options: dict | None = None, supports: bool = False, info: dict | None = None
+) -> dict:
     """Merged machine, process and filament profiles for this printer and material.
 
     ``print_options`` is project.yaml's ``print:`` block (strength, supports, layer).
@@ -315,7 +332,8 @@ def project_profiles(settings: Settings, print_options: dict | None = None, supp
     if _find(resources, "machine", machine_name) is None:
         raise ProjectError(
             f"The slicer has no profile for {settings.printer} with a {settings.nozzle:g} mm nozzle. "
-            "Run 'fabricator printers' to see what is available, or change the nozzle with 'fabricator setup'.")
+            "Run 'fabricator printers' to see what is available, or change the nozzle with 'fabricator setup'."
+        )
     machine = merged(resources, "machine", machine_name, "BBL")
     process_name = machine.get("default_print_profile")
     if not process_name:
@@ -348,5 +366,12 @@ def project_profiles(settings: Settings, print_options: dict | None = None, supp
         diameter = float(filament["filament_diameter"][0])
     except (KeyError, IndexError, ValueError):
         density, diameter = 1.24, 1.75
-    return {"machine": machine, "process": process, "filament": filament, "filament_name": fil_name,
-            "density": density, "diameter": diameter, "resources": resources}
+    return {
+        "machine": machine,
+        "process": process,
+        "filament": filament,
+        "filament_name": fil_name,
+        "density": density,
+        "diameter": diameter,
+        "resources": resources,
+    }

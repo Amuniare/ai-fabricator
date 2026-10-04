@@ -74,8 +74,9 @@ def test_coming_back_later_edits_the_same_design():
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not os.environ.get("FABRICATOR_BAMBU") and os.name != "nt",
-                    reason="needs Bambu Studio (set FABRICATOR_BAMBU)")
+@pytest.mark.skipif(
+    not os.environ.get("FABRICATOR_BAMBU") and os.name != "nt", reason="needs Bambu Studio (set FABRICATOR_BAMBU)"
+)
 def test_example_slices_with_real_time_and_grams():
     from fabricator import slicer
 

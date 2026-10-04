@@ -21,10 +21,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 from build123d import export_step, export_stl, import_brep
 
-from . import orient, render, slicer, split
+from . import orient, readme, render, slicer, split
 from .checks import Check, assembly, geometry, printability, worst
 from .design import Context, Joint, Model, Part3D
 from .meshing import to_mesh
@@ -63,15 +64,20 @@ def run_design(project: Project, bed: tuple[float, float, float]) -> Model:
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "fabricator.runner", str(project.path), str(raw_dir),
-             ",".join(str(b) for b in bed)],
-            capture_output=True, text=True, encoding="utf-8", timeout=DESIGN_TIME_LIMIT, env=env,
+            [sys.executable, "-m", "fabricator.runner", str(project.path), str(raw_dir), ",".join(str(b) for b in bed)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=DESIGN_TIME_LIMIT,
+            env=env,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         raise DesignError(
             f"The design took longer than {DESIGN_TIME_LIMIT // 60} minutes to build, so it was stopped. "
             "Usually this means too many small details or rounded edges on a complex shape.",
-            None, "",
+            None,
+            "",
         ) from None
     error_file = raw_dir / "error.json"
     if proc.returncode != 0 or error_file.exists():
@@ -86,16 +92,29 @@ def load_raw(raw_dir: Path) -> Model:
     data = json.loads((raw_dir / "raw.json").read_text(encoding="utf-8"))
     model = Model(data["name"])
     for p in data["parts"]:
-        model.parts.append(Part3D(
-            id=p["id"], name=p["name"], shape=import_brep(str(raw_dir / p["file"])),
-            color=p["color"], printed=p["printed"], hardware=p["hardware"],
-            face_down=p.get("face_down"), notes=p.get("notes", ""),
-        ))
+        model.parts.append(
+            Part3D(
+                id=p["id"],
+                name=p["name"],
+                shape=import_brep(str(raw_dir / p["file"])),
+                color=p["color"],
+                printed=p["printed"],
+                hardware=p["hardware"],
+                face_down=p.get("face_down"),
+                notes=p.get("notes", ""),
+            )
+        )
     for j in data["joints"]:
         joint = Joint(
-            a=j["a"], b=j["b"], kind=j["kind"], fit=j["fit"], gap=j["gap"],
-            hardware=j["hardware"], at=tuple(j["at"]) if j["at"] else None,
-            axis=tuple(j["axis"]) if j["axis"] else None, note=j["note"],
+            a=j["a"],
+            b=j["b"],
+            kind=j["kind"],
+            fit=j["fit"],
+            gap=j["gap"],
+            hardware=j["hardware"],
+            at=tuple(j["at"]) if j["at"] else None,
+            axis=tuple(j["axis"]) if j["axis"] else None,
+            note=j["note"],
         )
         joint.features = {k: import_brep(str(raw_dir / f)) for k, f in j["features"].items()}
         model.joints.append(joint)
@@ -137,12 +156,17 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
         export_step(part.shape, str(parts_dir / f"{part.id}.step"))
         export_stl(part.shape, str(parts_dir / f"{part.id}.stl"), tolerance=0.02, angular_tolerance=0.2)
         info = {
-            "id": part.id, "name": part.name, "printed": part.printed, "color": part.color,
-            "hardware": part.hardware, "source_part": part.source_part, "notes": part.notes,
+            "id": part.id,
+            "name": part.name,
+            "printed": part.printed,
+            "color": part.color,
+            "hardware": part.hardware,
+            "source_part": part.source_part,
+            "notes": part.notes,
         }
         bb = part.shape.bounding_box()
         info["size_mm"] = [round(bb.size.X, 2), round(bb.size.Y, 2), round(bb.size.Z, 2)]
-        info["volume_cm3"] = round(part.shape.volume / 1000, 2)
+        info["volume_cm3"] = round(cast(Any, part.shape).volume / 1000, 2)  # every part is a solid or compound
         info["fingerprint"] = fingerprint(part.shape)
         if part.printed:
             choice = orient.choose(part, bed, ctx)
@@ -169,13 +193,24 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
 
     summary = {
         "name": model.name,
-        "printer": settings.printer, "nozzle": settings.nozzle, "material": settings.material,
+        "printer": settings.printer,
+        "nozzle": settings.nozzle,
+        "material": settings.material,
         "bed_mm": list(bed),
         "status": status,
         "parts": part_info,
         "joints": [
-            {"a": j.a, "b": j.b, "kind": j.kind, "fit": j.fit, "gap": j.gap,
-             "hardware": j.hardware, "at": j.at, "axis": j.axis, "note": j.note}
+            {
+                "a": j.a,
+                "b": j.b,
+                "kind": j.kind,
+                "fit": j.fit,
+                "gap": j.gap,
+                "hardware": j.hardware,
+                "at": j.at,
+                "axis": j.axis,
+                "note": j.note,
+            }
             for j in model.joints
         ],
         "hardware": hardware_list(model),
@@ -194,6 +229,7 @@ def build(project: Project, note: str | None = None, save: bool = True, pictures
         if version:
             summary["version"] = version["number"]
 
+    readme.write(project)
     return BuildResult(project, model, checks, status, shots, version, messages, summary)
 
 
@@ -225,8 +261,10 @@ def reprint_list(previous: dict[str, str], parts: list[dict]) -> str:
         return "No pieces changed shape since the last build."
     if not same:
         return "Every piece changed shape since the last build."
-    return (f"Changed since the last build: {', '.join(changed)}. "
-            f"Unchanged: {', '.join(same)} — no need to reprint those if they're already printed.")
+    return (
+        f"Changed since the last build: {', '.join(changed)}. "
+        f"Unchanged: {', '.join(same)} — no need to reprint those if they're already printed."
+    )
 
 
 def hardware_list(model: Model) -> dict[str, int]:

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from build123d import Box, Cylinder, Pos
@@ -36,7 +37,8 @@ def test_bar_splits_into_fewest_pieces_with_pegs(ctx):
     assert {j.kind for j in model.joints} == {"peg"}
     assert [(j.a, j.b) for j in model.joints] == [("P01", "P02"), ("P02", "P03"), ("P03", "P04")]
     # cuts land exactly at even spacing for a plain bar
-    assert sorted(j.at[0] for j in model.joints) == pytest.approx([-150, 0, 150], abs=0.01)
+    assert all(j.at for j in model.joints)
+    assert sorted(cast(Any, j.at)[0] for j in model.joints) == pytest.approx([-150, 0, 150], abs=0.01)
     assert "600 mm long" in messages[0] and "4 pieces" in messages[0] and "pegs" in messages[0]
 
     checks = assembly.check_model(model, ctx)
@@ -54,8 +56,10 @@ def test_bar_splits_into_fewest_pieces_with_pegs(ctx):
 def test_split_is_deterministic(ctx):
     def run():
         m, _ = split.split_oversized(_bar(), ctx, {})
-        return ([(p.id, p.name, round(p.shape.volume, 3)) for p in m.parts],
-                [(j.a, j.b, j.at, j.note) for j in m.joints])
+        return (
+            [(p.id, p.name, round(cast(Any, p.shape).volume, 3)) for p in m.parts],
+            [(j.a, j.b, j.at, j.note) for j in m.joints],
+        )
 
     assert run() == run()
 
@@ -75,10 +79,11 @@ def test_rotated_part_counts_as_fitting(ctx):
 def test_plate_splits_on_two_axes(ctx):
     m = Model("Plate")
     m.add(Box(300, 300, 10), "Plate")
-    model, messages = split.split_oversized(m, ctx, {})
+    model, _messages = split.split_oversized(m, ctx, {})
     assert [p.id for p in model.parts] == ["P01", "P02", "P03", "P04"]
     assert all(", " in p.name and "piece" in p.name for p in model.parts)
-    assert {tuple(abs(v) for v in j.axis) for j in model.joints} == {(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)}
+    assert all(j.axis for j in model.joints)
+    assert {tuple(abs(v) for v in cast(Any, j.axis)) for j in model.joints} == {(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)}
     assert len(model.joints) == 4
     assert not _fails(assembly.check_model(model, ctx))
 
@@ -88,7 +93,8 @@ def test_manual_seams_are_used_exactly(ctx):
     m.add(Box(400, 60, 20), "Beam")
     model, messages = split.split_oversized(m, ctx, {"seams": [{"axis": "x", "at": -60}, {"axis": "x", "at": 80}]})
     assert len(model.parts) == 3
-    assert sorted(j.at[0] for j in model.joints) == pytest.approx([-60, 80], abs=1e-6)
+    assert all(j.at for j in model.joints)
+    assert sorted(cast(Any, j.at)[0] for j in model.joints) == pytest.approx([-60, 80], abs=1e-6)
     assert "seams you chose" in messages[0]
     assert not _fails(assembly.check_model(model, ctx))
 
@@ -108,15 +114,19 @@ def test_cut_avoids_a_hole(ctx):
     m.add(Box(280, 60, 20) - Pos(0, 0, 0) * Cylinder(8, 30), "Bar")
     model, _ = split.split_oversized(m, ctx, {})
     assert len(model.parts) == 2
-    cut_x = model.joints[0].at[0]
+    at0 = model.joints[0].at
+    assert at0 is not None
+    cut_x = at0[0]
     assert abs(cut_x) > 8 + 5  # not through the hole or right next to it
     assert not [c for c in assembly.check_model(model, ctx) if c.status == "fail"]
 
 
-@pytest.mark.parametrize("kind,expect", [("dowel", "dowel"), ("screw", "screw"), ("dovetail", "dovetail"),
-                                         ("tongue-groove", "tongue-groove")])
+@pytest.mark.parametrize(
+    "kind,expect",
+    [("dowel", "dowel"), ("screw", "screw"), ("dovetail", "dovetail"), ("tongue-groove", "tongue-groove")],
+)
 def test_other_joint_kinds(ctx, kind, expect):
-    model, messages = split.split_oversized(_bar(), ctx, {"joint": kind})
+    model, _messages = split.split_oversized(_bar(), ctx, {"joint": kind})
     assert {j.kind for j in model.joints} == {expect}
     checks = assembly.check_model(model, ctx)
     assert not _fails(checks), _fails(checks)
@@ -151,7 +161,7 @@ def test_references_and_design_joints_are_kept(ctx):
     ids = [p.id for p in model.parts]
     assert ids[:3] == ["P01", "P02", "P03"] and "P04" in ids and any(i.startswith("R") for i in ids)
     assert model.part("P04").name == "Knob"
-    rest = [j for j in model.joints if j.kind == "rest"][0]
+    rest = next(j for j in model.joints if j.kind == "rest")
     assert (rest.a, rest.b) == ("P03", "P04")  # re-pointed to the piece under the knob
 
 
@@ -169,7 +179,7 @@ def test_round_rod_pieces_ask_to_stand_on_the_face_without_pegs(ctx):
 
     m = Model("Rod")
     m.add(Rotation(0, 90, 0) * Cylinder(25, 400), "Rod")
-    model, messages = split.split_oversized(m, ctx, {})
+    model, _messages = split.split_oversized(m, ctx, {})
     assert len(model.parts) == 3
     # the pegs point +x out of P01 and P02, so their -x end should go on the bed
     assert [p.face_down for p in model.parts] == ["-X", "-X", None]

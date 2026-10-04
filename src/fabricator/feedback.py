@@ -41,8 +41,14 @@ def _printer_short(settings: Settings) -> str:
     return settings.printer.replace("Bambu Lab ", "")
 
 
-def record(project: Project, settings: Settings, fit: str | None = None, result: str | None = None,
-           part: str | None = None, note: str = "") -> dict:
+def record(
+    project: Project,
+    settings: Settings,
+    fit: str | None = None,
+    result: str | None = None,
+    part: str | None = None,
+    note: str = "",
+) -> dict:
     entry = {"date": date.today().isoformat(), "part": part, "fit": fit, "result": result, "note": note}
     out: dict = {}
 
@@ -55,8 +61,12 @@ def record(project: Project, settings: Settings, fit: str | None = None, result:
                 raise ProjectError("Which fit was it? Say one of: press, snug, sliding, loose, hole.")
             else:
                 raise ProjectError(
-                    "That part has more than one kind of fit: " + ", ".join(fits) +
-                    ". Which one was too " + ("tight" if result == "too-tight" else "loose") + "?")
+                    "That part has more than one kind of fit: "
+                    + ", ".join(fits)
+                    + ". Which one was too "
+                    + ("tight" if result == "too-tight" else "loose")
+                    + "?"
+                )
         gaps = settings.fits()
         if fit not in gaps:
             raise ProjectError(f"Unknown fit '{fit}'. Known fits: {', '.join(gaps)}.")
@@ -67,12 +77,16 @@ def record(project: Project, settings: Settings, fit: str | None = None, result:
         settings.save()
         entry.update(fit=fit, old_gap=old, new_gap=new)
         if new == old:
-            message = (f"Got it. The {fit} gap is already at 0 mm on your {_printer_short(settings)} "
-                       f"with {settings.material}, so it can't go any tighter.")
+            message = (
+                f"Got it. The {fit} gap is already at 0 mm on your {_printer_short(settings)} "
+                f"with {settings.material}, so it can't go any tighter."
+            )
         else:
-            message = (f"Got it. {fit.capitalize()} fits on your {_printer_short(settings)} with "
-                       f"{settings.material} now use a {new:g} mm gap instead of {old:g} mm. "
-                       f"Rebuild to update this design.")
+            message = (
+                f"Got it. {fit.capitalize()} fits on your {_printer_short(settings)} with "
+                f"{settings.material} now use a {new:g} mm gap instead of {old:g} mm. "
+                f"Rebuild to update this design."
+            )
         out.update(fit=fit, old_gap=old, new_gap=new)
     elif result == "good":
         entry.update(fit=fit)
@@ -92,8 +106,15 @@ def record(project: Project, settings: Settings, fit: str | None = None, result:
     # global log
     log = home() / "feedback-log.yaml"
     items = (yaml.safe_load(log.read_text(encoding="utf-8")) or []) if log.exists() else []
-    items.append({**entry, "project": project.path.name, "printer": settings.printer,
-                  "nozzle": settings.nozzle, "material": settings.material})
+    items.append(
+        {
+            **entry,
+            "project": project.path.name,
+            "printer": settings.printer,
+            "nozzle": settings.nozzle,
+            "material": settings.material,
+        }
+    )
     log.write_text(yaml.safe_dump(items, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     out["message"] = message

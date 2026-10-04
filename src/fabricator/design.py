@@ -23,18 +23,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from build123d import *  # noqa: F401,F403  (re-exported for design files)
-from build123d import Shape, Vector
+# Joint below deliberately shadows build123d's Joint, so designs get fabricator's.
+from build123d import *  # noqa: F403  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]
+from build123d import Vector
+from build123d.topology import Shape
 
-__all__ = [name for name in dir() if not name.startswith("_")]  # build123d names
-__all__ += ["Model", "Part3D", "Joint", "Context", "Params"]
+__all__ = [name for name in dir() if not name.startswith("_")]  # pyright: ignore[reportUnsupportedDunderAll]
+__all__ += ["Context", "Joint", "Model", "Params", "Part3D"]
 
 # Colours handed out to parts in order, so pictures tell pieces apart.
 PALETTE = [
-    "#4C78A8", "#F58518", "#54A24B", "#E45756", "#72B7B2",
-    "#EECA3B", "#B279A2", "#FF9DA6", "#9D755D", "#BAB0AC",
+    "#4C78A8",
+    "#F58518",
+    "#54A24B",
+    "#E45756",
+    "#72B7B2",
+    "#EECA3B",
+    "#B279A2",
+    "#FF9DA6",
+    "#9D755D",
+    "#BAB0AC",
 ]
 
 JOINT_KINDS = {
@@ -57,9 +67,7 @@ class Params(dict):
         try:
             return self[name]
         except KeyError:
-            raise AttributeError(
-                f"No parameter called '{name}'. Add it under 'parameters:' in project.yaml."
-            ) from None
+            raise AttributeError(f"No parameter called '{name}'. Add it under 'parameters:' in project.yaml.") from None
 
 
 @dataclass
@@ -174,8 +182,8 @@ class Model:
             fit=fit,
             gap=gap,
             hardware=list(hardware or []),
-            at=tuple(at) if at else None,
-            axis=tuple(axis) if axis else None,
+            at=cast("tuple[float, float, float]", tuple(at)) if at else None,
+            axis=cast("tuple[float, float, float]", tuple(axis)) if axis else None,
             note=note,
         )
         self.joints.append(joint)

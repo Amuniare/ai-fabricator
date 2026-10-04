@@ -1,6 +1,5 @@
 """Profiles, printer lookup and real slicing (slow tests need Bambu Studio)."""
 
-import json
 import os
 from pathlib import Path
 
@@ -24,8 +23,9 @@ def env(tmp_path, monkeypatch):
         monkeypatch.setenv("FABRICATOR_BAMBU_RESOURCES", str(RESOURCES))
 
 
-needs_slicer = pytest.mark.skipif(slicer.find_slicer(Settings()) is None and not BAMBU.exists(),
-                                  reason="Bambu Studio not available")
+needs_slicer = pytest.mark.skipif(
+    slicer.find_slicer(Settings()) is None and not BAMBU.exists(), reason="Bambu Studio not available"
+)
 
 
 def cube_stl(path: Path, size=20.0):
@@ -38,6 +38,7 @@ def cube_stl(path: Path, size=20.0):
 @needs_slicer
 def test_find_slicer():
     info = slicer.find_slicer(Settings())
+    assert info is not None
     assert info["kind"] == "bambu" and Path(info["exe"]).exists() and Path(info["resources"]).is_dir()
 
 
@@ -103,8 +104,10 @@ def test_slice_needs_build():
 
 def test_support_fraction_parser(tmp_path):
     g = tmp_path / "x.gcode"
-    g.write_text("M83\n; FEATURE: Outer wall\nG1 X1 Y1 E3\n; FEATURE: Support\nG1 X2 Y2 E1\n"
-                 "G1 E-1\nG1 X3 Y3 E-0.5\n; FEATURE: Support interface\nG1 X2 Y2 E1\n")
+    g.write_text(
+        "M83\n; FEATURE: Outer wall\nG1 X1 Y1 E3\n; FEATURE: Support\nG1 X2 Y2 E1\n"
+        "G1 E-1\nG1 X3 Y3 E-0.5\n; FEATURE: Support interface\nG1 X2 Y2 E1\n"
+    )
     assert bambu.gcode_support_fraction(g) == pytest.approx(0.4)
 
 
@@ -121,9 +124,12 @@ def test_cube_time_and_weight(tmp_path):
 @pytest.mark.slow
 @needs_slicer
 def test_overhang_gets_supports(tmp_path):
-    a = trimesh.creation.box((10, 10, 30)); a.apply_translation((0, 0, 15))
-    b = trimesh.creation.box((40, 10, 5)); b.apply_translation((15, 0, 27.5))
-    tee = trimesh.boolean.union([a, b]); tee.export(str(tmp_path / "t.stl"))
+    a = trimesh.creation.box((10, 10, 30))
+    a.apply_translation((0, 0, 15))
+    b = trimesh.creation.box((40, 10, 5))
+    b.apply_translation((15, 0, 27.5))
+    tee = trimesh.boolean.union([a, b])
+    tee.export(str(tmp_path / "t.stl"))
     plain = slicer.slice_files(Settings(), [tmp_path / "t.stl"], supports=False)
     sup = slicer.slice_files(Settings(), [tmp_path / "t.stl"], supports=True)
     assert sup["support_grams"] > 0.3

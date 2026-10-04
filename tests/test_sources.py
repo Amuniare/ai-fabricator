@@ -1,6 +1,5 @@
 import pytest
 import trimesh
-
 from build123d import Box, export_step
 
 from fabricator import sources

@@ -3,6 +3,7 @@
 Pieces keep ``margin`` mm from the bed edges. A piece that only fits with the smaller
 margin the splitter allows (2 mm, see split.EDGE_MARGIN) is printed alone, centred.
 """
+
 from __future__ import annotations
 
 MIN_MARGIN = 2.0  # same as split.EDGE_MARGIN
@@ -50,10 +51,14 @@ class _Plate:
                 new.append((fx, y + ph, fw, fy + fh - y - ph))
         new = [r for r in new if r[2] > 1e-9 and r[3] > 1e-9]
         self.free = [
-            r for i, r in enumerate(new)
+            r
+            for i, r in enumerate(new)
             if not any(
-                j != i and o[0] <= r[0] + 1e-9 and o[1] <= r[1] + 1e-9
-                and o[0] + o[2] >= r[0] + r[2] - 1e-9 and o[1] + o[3] >= r[1] + r[3] - 1e-9
+                j != i
+                and o[0] <= r[0] + 1e-9
+                and o[1] <= r[1] + 1e-9
+                and o[0] + o[2] >= r[0] + r[2] - 1e-9
+                and o[1] + o[3] >= r[1] + r[3] - 1e-9
                 and (o != r or j < i)
                 for j, o in enumerate(new)
             )
@@ -80,13 +85,14 @@ def layout(pieces, bed, spacing: float = 6.0, margin: float = 5.0) -> list[list[
             if fits:
                 why = f"{p['id']} is {_fmt(sz)} mm tall, more than the {_fmt(bz)} mm the printer can build, so it can't be printed in one go."
             else:
-                why = (f"{p['id']} is {_fmt(sx)} x {_fmt(sy)} mm on the bed, more than the "
-                       f"{_fmt(bx - 2 * MIN_MARGIN)} x {_fmt(by - 2 * MIN_MARGIN)} mm the printer can use, so it can't be printed in one go.")
+                why = (
+                    f"{p['id']} is {_fmt(sx)} x {_fmt(sy)} mm on the bed, more than the "
+                    f"{_fmt(bx - 2 * MIN_MARGIN)} x {_fmt(by - 2 * MIN_MARGIN)} mm the printer can use, so it can't be printed in one go."
+                )
             raise ValueError(why)
         items.append((idx, p["id"], float(sx), float(sy)))
 
-    order = sorted((t for t in items if t[2] is not None),
-                   key=lambda t: (-(t[2] * t[3]), -max(t[2], t[3]), t[1], t[0]))
+    order = sorted((t for t in items if t[2] is not None), key=lambda t: (-(t[2] * t[3]), -max(t[2], t[3]), t[1], t[0]))
     plates: list[_Plate] = []
     first: list[int] = []
     members: list[list[int]] = []
@@ -95,19 +101,14 @@ def layout(pieces, bed, spacing: float = 6.0, margin: float = 5.0) -> list[list[
         if sx is None:
             continue
         w, h = sx + spacing, sy + spacing
-        for k, plate in enumerate(plates):
-            best = plate.find(w, h)
-            if best:
-                plate.place(pid, best)
-                break
-        else:
-            plate = _Plate(W, H)
-            best = plate.find(w, h)
-            plate.place(pid, best)
-            plates.append(plate)
+        # the first plate with room, or a new plate
+        k = next((i for i, plate in enumerate(plates) if plate.find(w, h)), None)
+        if k is None:
+            plates.append(_Plate(W, H))
             first.append(idx)
             members.append([])
             k = len(plates) - 1
+        plates[k].place(pid, plates[k].find(w, h))
         members[k].append(idx)
         first[k] = min(first[k], idx)
 
@@ -118,7 +119,7 @@ def layout(pieces, bed, spacing: float = 6.0, margin: float = 5.0) -> list[list[
             out.append([{"id": k[1], "x": 0.0, "y": 0.0, "rotated": k[2]}])
             continue
         rows = []
-        pos = {(m): None for m in members[k]}
+        dict.fromkeys(members[k])
         # map ids back to input index (ids are expected unique; fall back by order)
         by_id: dict[str, list[int]] = {}
         for m in sorted(members[k]):
@@ -126,12 +127,17 @@ def layout(pieces, bed, spacing: float = 6.0, margin: float = 5.0) -> list[list[
         for pid, x, y, pw, ph, rot in plates[k].placed:
             m = by_id[pid].pop(0)
             fw, fh = pw - spacing, ph - spacing
-            rows.append((m, {
-                "id": pid,
-                "x": margin + x + fw / 2 - bx / 2,
-                "y": margin + y + fh / 2 - by / 2,
-                "rotated": rot,
-            }))
+            rows.append(
+                (
+                    m,
+                    {
+                        "id": pid,
+                        "x": margin + x + fw / 2 - bx / 2,
+                        "y": margin + y + fh / 2 - by / 2,
+                        "rotated": rot,
+                    },
+                )
+            )
         out.append([r for _, r in sorted(rows, key=lambda t: t[0])])
     return out
 

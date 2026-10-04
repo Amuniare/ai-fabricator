@@ -145,21 +145,32 @@ def _internet():
 
 def run() -> list[tuple[str, str, str]]:
     checks = [
-        ("Python", _python), ("CAD engine", _cad), ("Mesh tools", _mesh), ("Git", _git),
-        ("Bambu Studio", _bambu), ("Printer profile", _profile), ("Settings saved", _configured),
-        ("Projects folder", _projects), ("OrcaSlicer", _orca),
-        ("Claude Code in VS Code", _vscode_ext), ("Internet", _internet),
+        ("Python", _python),
+        ("CAD engine", _cad),
+        ("Mesh tools", _mesh),
+        ("Git", _git),
+        ("Bambu Studio", _bambu),
+        ("Printer profile", _profile),
+        ("Settings saved", _configured),
+        ("Projects folder", _projects),
+        ("OrcaSlicer", _orca),
+        ("Claude Code in VS Code", _vscode_ext),
+        ("Internet", _internet),
     ]
     return [_check(n, f) for n, f in checks]
 
 
 # ---- update -------------------------------------------------------------------------------
 
+
 def _find_uv() -> str | None:
     found = shutil.which("uv")
     if found:
         return found
-    for base in (Path.home() / ".local" / "bin", Path(os.environ.get("USERPROFILE", "~")).expanduser() / ".local" / "bin"):
+    for base in (
+        Path.home() / ".local" / "bin",
+        Path(os.environ.get("USERPROFILE", "~")).expanduser() / ".local" / "bin",
+    ):
         for exe in ("uv.exe", "uv"):
             if (base / exe).exists():
                 return str(base / exe)
@@ -167,34 +178,42 @@ def _find_uv() -> str | None:
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
-    r = subprocess.run(cmd, cwd=TOOL_DIR, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=600)
+    r = subprocess.run(
+        cmd, cwd=TOOL_DIR, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600, check=False
+    )
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
 def update() -> str:
     try:
         if not (TOOL_DIR / ".git").exists():
-            return ("This copy of Fabricator was downloaded as a ZIP, so it can't update itself.\n"
-                    "To update: download the newest ZIP from the project page on GitHub, unzip it, "
-                    "put the new folder where the old one was (or beside it), and double-click "
-                    "setup.bat in the new folder. Your projects are kept separately in "
-                    f"{_projects_path()} and are not touched by this, so they are safe.")
+            return (
+                "This copy of Fabricator was downloaded as a ZIP, so it can't update itself.\n"
+                "To update: download the newest ZIP from the project page on GitHub, unzip it, "
+                "put the new folder where the old one was (or beside it), and double-click "
+                "setup.bat in the new folder. Your projects are kept separately in "
+                f"{_projects_path()} and are not touched by this, so they are safe."
+            )
         if not shutil.which("git"):
             return "Git isn't installed, so I can't update. Run setup.bat again to install it."
         code, out = _run(["git", "pull", "--ff-only"])
         if code != 0:
-            return ("The update didn't go through. If you changed files in the Fabricator folder, "
-                    "that can block it. Details:\n" + out)
+            return (
+                "The update didn't go through. If you changed files in the Fabricator folder, "
+                "that can block it. Details:\n" + out
+            )
         already = "Already up to date" in out
         uv = _find_uv()
         if uv is None:
-            return ("Downloaded the update, but couldn't find 'uv' to finish. Run setup.bat again.")
+            return "Downloaded the update, but couldn't find 'uv' to finish. Run setup.bat again."
         code, sync_out = _run([uv, "sync"])
         if code != 0:
             return "Downloaded the update, but installing its pieces failed:\n" + sync_out
-        return ("You already have the newest version." if already else
-                "Updated to the newest version. Your projects were not touched.")
+        return (
+            "You already have the newest version."
+            if already
+            else "Updated to the newest version. Your projects were not touched."
+        )
     except Exception as e:
         return f"The update could not be completed ({type(e).__name__}: {e})."
 

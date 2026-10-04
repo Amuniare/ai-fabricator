@@ -18,7 +18,8 @@ def build(p, ctx):
     board = fillet(front_corners, radius=p.corner_radius)
 
     lip = Pos(0, -(p.depth - p.lip_thickness), p.thickness) * Box(
-        p.width - 2 * p.corner_radius, p.lip_thickness, p.lip_height, align=BACK)
+        p.width - 2 * p.corner_radius, p.lip_thickness, p.lip_height, align=BACK
+    )
     rail = Pos(0, 0, p.thickness) * Box(p.width, p.rail_thickness, p.rail_height, align=BACK)
     shelf = board + lip + rail
 
@@ -27,8 +28,9 @@ def build(p, ctx):
     z = p.thickness + p.rail_height / 2
     for i in range(n):
         x = -p.width / 2 + p.width * (i + 0.5) / n
-        shelf -= ctx.hw.wall_screw_hole(p.screw, at=(x, -p.rail_thickness, z), direction=(0, 1, 0),
-                                        length=p.rail_thickness)
+        shelf -= ctx.hw.wall_screw_hole(
+            p.screw, at=(x, -p.rail_thickness, z), direction=(0, 1, 0), length=p.rail_thickness
+        )
 
     model.add(shelf, "Shelf")
     model.hardware(f"{p.screw} wood screw, 40 mm", n)

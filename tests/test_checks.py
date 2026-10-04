@@ -23,7 +23,9 @@ def run(shape, ctx=CTX, face_down=None, printed=True):
 def test_simple_box_passes_everything():
     r = run(Box(30, 30, 10))
     assert all(c.status == "pass" for c in r.values()), {k: (v.status, v.message) for k, v in r.items()}
-    assert r["wall thickness"].value == 10 or abs(r["wall thickness"].value - 10) < 0.2
+    wall = r["wall thickness"].value
+    assert wall is not None
+    assert wall == 10 or abs(wall - 10) < 0.2
 
 
 def test_not_printed_gives_nothing():
@@ -34,6 +36,7 @@ def test_thin_wall_fails_with_value_and_place():
     cup = Box(30, 30, 20) - Pos(0, 0, 1.5) * Box(29, 29, 20)
     r = run(cup)
     w = r["wall thickness"]
+    assert w.value is not None
     assert w.status == "fail" and abs(w.value - 0.5) < 0.05
     assert w.where and w.fix and "0.5" in w.message
 
@@ -63,6 +66,7 @@ def test_t_flat_has_no_overhang_but_forced_upright_does():
     t = Pos(0, 0, 25) * Box(60, 20, 10) + Pos(0, 0, 10) * Box(10, 20, 20)
     assert run(t)["overhangs"].status == "pass"
     forced = run(t, face_down="-Z")["overhangs"]
+    assert forced.value is not None
     assert forced.status == "warn" and forced.value > 25 and forced.where
 
 

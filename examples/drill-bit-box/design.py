@@ -38,7 +38,8 @@ def build(p, ctx):
     lid -= notch
 
     b = model.add(box, "Box")
-    l = model.add(lid, "Lid", face_down="-Z")
-    model.join(l, b, "slide", fit="sliding", axis=(1, 0, 0),
-               note="the lid slides in from the open end along the grooves")
+    lid_id = model.add(lid, "Lid", face_down="-Z")
+    model.join(
+        lid_id, b, "slide", fit="sliding", axis=(1, 0, 0), note="the lid slides in from the open end along the grooves"
+    )
     return model

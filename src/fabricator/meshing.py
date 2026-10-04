@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
-from build123d import Shape
+from build123d.topology import Shape
 
 # Fine enough for printing (well under a 0.4 mm nozzle line), coarse enough to be quick.
 LINEAR_TOLERANCE = 0.02

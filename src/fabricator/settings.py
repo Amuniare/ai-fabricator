@@ -22,7 +22,6 @@ def _documents_folder() -> Path:
     if sys.platform == "win32":
         try:
             import ctypes
-            from ctypes import wintypes
             import uuid
 
             # FOLDERID_Documents
@@ -45,11 +44,28 @@ def _documents_folder() -> Path:
     return docs if docs.is_dir() else Path.home()
 
 
+USER_NOTES_FILE = "My notes.md"
+USER_NOTES_TEMPLATE = """# My notes
+
+Things Claude should remember for every project. Write in plain words, for example:
+
+- Screws and parts I have on hand: ...
+- My favourite colours or filament: ...
+- Things I like (rounded corners, labels on parts, ...): ...
+
+Claude reads this before starting work and adds to it when you say "remember that ...".
+
+"""
+
+
 def home() -> Path:
     """The projects folder. Created on first use."""
     env = os.environ.get("FABRICATOR_HOME")
     path = Path(env).expanduser() if env else _documents_folder() / "Fabricator Projects"
     path.mkdir(parents=True, exist_ok=True)
+    notes = path / USER_NOTES_FILE
+    if not notes.exists():
+        notes.write_text(USER_NOTES_TEMPLATE, encoding="utf-8")
     return path
 
 
@@ -97,7 +113,7 @@ class Settings:
 
     # ---- files ------------------------------------------------------------
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls) -> Settings:
         path = home() / SETTINGS_FILE
         if not path.exists():
             return cls()

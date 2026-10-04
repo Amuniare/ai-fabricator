@@ -71,7 +71,7 @@ def test_layout_no_overlap_and_margins():
             assert y0 >= -90 + mg - 1e-6 and y1 <= 90 - mg + 1e-6
             rects.append((x0, x1, y0, y1))
         for i, a in enumerate(rects):
-            for b in rects[i + 1:]:
+            for b in rects[i + 1 :]:
                 gapx = max(b[0] - a[1], a[0] - b[1])
                 gapy = max(b[2] - a[3], a[2] - b[3])
                 assert max(gapx, gapy) >= sp - 1e-6

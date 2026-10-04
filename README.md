@@ -7,6 +7,8 @@ When you like it, you get a print-ready file to open in Bambu Studio and send to
 
 The idea is **describe, look, print**. You never need to know CAD.
 
+![A 600 mm shelf that Fabricator split into 4 pieces to fit a small printer](examples/shelf/picture.png)
+
 ## What you need
 
 - Windows 11
@@ -48,15 +50,23 @@ An example:
 - Learns from your feedback: tell it a joint was "too tight" or "too loose" and it adjusts for your printer and filament
 - Makes a finished folder with the parts, print files and a short guide
 
-The `examples` folder has four finished designs to try or start from: a wall bracket for a
-remote, a battery holder, a 600 mm shelf that comes in 4 pieces, and a drill-bit box with
-a sliding lid. Ask Claude to "start from the shelf example", or run
-`uv run fabricator new "My shelf" -e shelf`.
+The [examples](examples/README.md) folder has four finished designs, with pictures, to try
+or start from: a wall bracket for a remote, a battery holder, a 600 mm shelf that comes in
+4 pieces, and a drill-bit box with a sliding lid. Ask Claude to "start from the shelf
+example".
 
 ## Where your work is kept
 
 In **Documents\Fabricator Projects**, one folder per object. This is separate from the
 Fabricator program folder, so updating or replacing the program never touches your designs.
+
+- Each project has a **README.md** page with its pictures, pieces and print time. Open it
+  in VS Code and press Ctrl+Shift+V to see it. The pictures are in its `build\pictures` folder.
+- **My notes.md** in the projects folder is for things Claude should remember for every
+  project (screws you have, colours you like). Each project also has its own **notes.md**.
+  Say "remember that ..." and Claude writes it down.
+
+More detail: [docs/projects.md](docs/projects.md).
 
 ## Updating
 
@@ -82,8 +92,10 @@ uv run pytest
 uv run fabricator --help
 ```
 
+`uv run ruff check . && uv run ruff format --check . && uv run pyright` runs the linters.
 `fabricator --help` lists every command. How the pieces fit together is in
-[docs/architecture.md](docs/architecture.md). Design files are ordinary build123d Python;
+[docs/architecture.md](docs/architecture.md); the design reference Claude uses is
+[docs/designing.md](docs/designing.md). Design files are ordinary build123d Python;
 imported models (STEP, STL, 3MF, OBJ) are treated as data and never run.
 
 ## License

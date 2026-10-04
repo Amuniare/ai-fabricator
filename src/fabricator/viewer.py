@@ -11,9 +11,11 @@ import html
 import json
 import webbrowser
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import trimesh
+import trimesh.visual
 
 from .project import Project, ProjectError
 
@@ -25,7 +27,7 @@ def _rgba(color: str) -> list[int]:
     c = color.lstrip("#")
     if len(c) != 6:
         c = "BBBBBB"
-    return [int(c[i:i + 2], 16) for i in (0, 2, 4)] + [255]
+    return [int(c[i : i + 2], 16) for i in (0, 2, 4)] + [255]
 
 
 def load_model_json(project: Project) -> dict:
@@ -52,11 +54,12 @@ def build_scene(project: Project, include_reference: bool = True) -> tuple[trime
         stl = project.build_dir / "parts" / f"{p['id']}.stl"
         if not stl.exists():
             continue
-        mesh = trimesh.load(str(stl), force="mesh")
+        mesh = cast("trimesh.Trimesh", trimesh.load(str(stl), force="mesh"))
         mesh.apply_transform(to_gltf)
         color = _rgba(p.get("color", "#BBBBBB"))
         material = trimesh.visual.material.PBRMaterial(
-            baseColorFactor=color, metallicFactor=0.0, roughnessFactor=0.6, name=p["id"])
+            baseColorFactor=color, metallicFactor=0.0, roughnessFactor=0.6, name=p["id"]
+        )
         mesh.visual = trimesh.visual.TextureVisuals(material=material)
         scene.add_geometry(mesh, node_name=p["id"], geom_name=p["name"])
         held.append({"id": p["id"], "name": p["name"], "color": p.get("color", "#BBBBBB"), "printed": p["printed"]})
@@ -67,7 +70,7 @@ def build_scene(project: Project, include_reference: bool = True) -> tuple[trime
 
 def glb_bytes(project: Project, include_reference: bool = True) -> tuple[bytes, list[dict]]:
     scene, held = build_scene(project, include_reference)
-    return scene.export(file_type="glb"), held
+    return cast(bytes, scene.export(file_type="glb")), held
 
 
 PAGE = """<!doctype html>
@@ -249,9 +252,12 @@ def make(project: Project, open_browser: bool = True) -> Path:
     """Write build/viewer.html and (optionally) open it in the browser."""
     glb, held = glb_bytes(project, include_reference=True)
     title = html.escape(project.name)
-    page = (PAGE.replace("__TITLE__", title).replace("__CDN__", CDN)
-            .replace("__PARTS__", json.dumps(held).replace("</", "<\\/"))
-            .replace("__GLB__", base64.b64encode(glb).decode("ascii")))
+    page = (
+        PAGE.replace("__TITLE__", title)
+        .replace("__CDN__", CDN)
+        .replace("__PARTS__", json.dumps(held).replace("</", "<\\/"))
+        .replace("__GLB__", base64.b64encode(glb).decode("ascii"))
+    )
     out = project.build_dir / "viewer.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")

@@ -33,8 +33,9 @@ def build(p, ctx):
     z = p.hold_depth + p.wall + p.back_height / 2
     xs = [first_x - pocket_w / 2 + 10, -first_x + pocket_w / 2 - 10]
     for x in xs:
-        holder -= ctx.hw.wall_screw_hole(p.screw, at=(x, -p.plate_thickness, z), direction=(0, 1, 0),
-                                         length=p.plate_thickness)
+        holder -= ctx.hw.wall_screw_hole(
+            p.screw, at=(x, -p.plate_thickness, z), direction=(0, 1, 0), length=p.plate_thickness
+        )
 
     model.add(holder, "Holder")
     model.hardware(f"{p.screw} wood screw, 30 mm", len(xs))

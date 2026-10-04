@@ -41,9 +41,16 @@ def test_single_part_has_no_exploded(tmp_path):
 
 
 def test_exploded_moves_printed_parts_apart():
-    items = [render.item_from_mesh(i, __import__("trimesh").creation.box(extents=(10, 10, 10),
-             transform=__import__("trimesh").transformations.translation_matrix((x, 0, 0))), "#ff0000")
-             for i, x in (("A", -6), ("B", 6))]
+    items = [
+        render.item_from_mesh(
+            i,
+            __import__("trimesh").creation.box(
+                extents=(10, 10, 10), transform=__import__("trimesh").transformations.translation_matrix((x, 0, 0))
+            ),
+            "#ff0000",
+        )
+        for i, x in (("A", -6), ("B", 6))
+    ]
     moved = render.exploded_items(items)
     assert moved[1].lo[0] - moved[0].hi[0] > items[1].lo[0] - items[0].hi[0] + 5
 

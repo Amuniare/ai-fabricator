@@ -12,7 +12,7 @@ from fabricator.settings import Settings
 BAMBU = Path.home() / "tools/bambu/bambu-studio"
 RESOURCES = Path.home() / "tools/bambu/squashfs-root/resources"
 
-TEE = '''
+TEE = """
 from fabricator.design import *
 
 def build(p, ctx):
@@ -21,7 +21,7 @@ def build(p, ctx):
     top = Pos(15, 0, 27.5) * Box(40, 10, 5)
     m.add(stem + top, "Tee")
     return m
-'''
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -33,8 +33,13 @@ def env(tmp_path, monkeypatch):
 
 
 def opt(label, minutes, grams=5.0, support=0.0, needed=None):
-    return {"label": label, "minutes": minutes, "grams": grams, "support_grams": support,
-            "support_needed": support > 0 if needed is None else needed}
+    return {
+        "label": label,
+        "minutes": minutes,
+        "grams": grams,
+        "support_grams": support,
+        "support_needed": support > 0 if needed is None else needed,
+    }
 
 
 def test_recommend_prefers_no_support_within_15_percent():

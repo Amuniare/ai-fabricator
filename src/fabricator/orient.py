@@ -14,7 +14,8 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from build123d import Rotation, Pos, Shape
+from build123d import Pos, Rotation
+from build123d.topology import Shape
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial.transform import Rotation as _SciRotation
@@ -31,12 +32,14 @@ SMALL_ARCH_RISE_MM = 3.0  # ...as long as it rises no more than this
 BED_MARGIN = 1.0  # mm kept clear on each side of the bed
 
 _AXIS_WORDS = {  # which face is down -> words (front = -Y, left = -X)
-    (0, 0, -1): "as modelled", (0, 0, 1): "upside down",
-    (-1, 0, 0): "left side down", (1, 0, 0): "right side down",
-    (0, -1, 0): "front side down", (0, 1, 0): "back side down",
+    (0, 0, -1): "as modelled",
+    (0, 0, 1): "upside down",
+    (-1, 0, 0): "left side down",
+    (1, 0, 0): "right side down",
+    (0, -1, 0): "front side down",
+    (0, 1, 0): "back side down",
 }
-_DIRS = {"-X": (-1, 0, 0), "+X": (1, 0, 0), "-Y": (0, -1, 0), "+Y": (0, 1, 0),
-         "-Z": (0, 0, -1), "+Z": (0, 0, 1)}
+_DIRS = {"-X": (-1, 0, 0), "+X": (1, 0, 0), "-Y": (0, -1, 0), "+Y": (0, 1, 0), "-Z": (0, 0, -1), "+Z": (0, 0, 1)}
 
 
 @dataclass
@@ -69,6 +72,7 @@ class Orientation:
 
 
 # ---- measuring a mesh in a given turn ---------------------------------------------
+
 
 def _components(mesh, mask: np.ndarray) -> list[np.ndarray]:
     """Groups of touching faces among the faces picked by ``mask`` (indices)."""
@@ -109,7 +113,7 @@ def _span(tris_xy: np.ndarray, step: float = 0.25) -> float:
     for t in (tris_xy - lo) / step:
         draw.polygon([tuple(p) for p in t], fill=1, outline=1)
     inside = np.array(img, dtype=bool)
-    return float(2 * distance_transform_edt(inside).max() * step)
+    return float(2 * np.asarray(distance_transform_edt(inside)).max() * step)
 
 
 def analyze(mesh, R: np.ndarray | None = None) -> dict:
@@ -153,15 +157,24 @@ def analyze(mesh, R: np.ndarray | None = None) -> dict:
     support_area = float(areas[support_mask].sum())
     size = verts.max(axis=0) - verts.min(axis=0)
     return {
-        "verts": verts, "tri": tri, "zmin": zmin, "normals": normals, "areas": areas,
-        "overhang_mask": overhang, "support_mask": support_mask,
-        "overhang_area": float(areas[overhang].sum()), "support_area": support_area,
-        "contact_area": float(areas[contact].sum()), "flat_groups": groups,
-        "size": size, "height": float(size[2]),
+        "verts": verts,
+        "tri": tri,
+        "zmin": zmin,
+        "normals": normals,
+        "areas": areas,
+        "overhang_mask": overhang,
+        "support_mask": support_mask,
+        "overhang_area": float(areas[overhang].sum()),
+        "support_area": support_area,
+        "contact_area": float(areas[contact].sum()),
+        "flat_groups": groups,
+        "size": size,
+        "height": float(size[2]),
     }
 
 
 # ---- candidate turns ---------------------------------------------------------------------
+
 
 def _rot_down(n: np.ndarray) -> np.ndarray:
     """A turn that takes direction ``n`` to straight down (-Z)."""
@@ -236,7 +249,9 @@ def candidates(part, bed, ctx=None, mesh=None) -> list[Orientation]:
             dirs.append(n)
 
     wanted = getattr(part, "face_down", None)
-    wanted_dir = np.array(_DIRS[wanted.upper().replace(" ", "")], dtype=float) if wanted and wanted.upper() in _DIRS else None
+    wanted_dir = (
+        np.array(_DIRS[wanted.upper().replace(" ", "")], dtype=float) if wanted and wanted.upper() in _DIRS else None
+    )
 
     result: list[Orientation] = []
     for n in dirs:
@@ -262,14 +277,21 @@ def candidates(part, bed, ctx=None, mesh=None) -> list[Orientation]:
         if turned:
             label += ", turned 90 degrees to fit"
         support_needed = m["support_area"] > SUPPORT_AREA_MM2
-        score = m["support_area"] * 5.0 + (m["overhang_area"] - m["support_area"]) * 0.5 \
-            - m["contact_area"] * 0.5 + h
+        score = m["support_area"] * 5.0 + (m["overhang_area"] - m["support_area"]) * 0.5 - m["contact_area"] * 0.5 + h
         requested = wanted_dir is not None and float(n @ wanted_dir) > 0.999
-        result.append(Orientation(
-            label=label, rotation=R.tolist(), face_down=_face_name(n),
-            overhang_area_mm2=m["support_area"], contact_area_mm2=m["contact_area"],
-            height_mm=h, fits=fits, support_needed=support_needed, score=score,
-        ))
+        result.append(
+            Orientation(
+                label=label,
+                rotation=R.tolist(),
+                face_down=_face_name(n),
+                overhang_area_mm2=m["support_area"],
+                contact_area_mm2=m["contact_area"],
+                height_mm=h,
+                fits=fits,
+                support_needed=support_needed,
+                score=score,
+            )
+        )
         result[-1]._requested = requested  # type: ignore[attr-defined]
 
     result.sort(key=lambda o: (not o.fits, not getattr(o, "_requested", False), round(o.score, 6), o.label))

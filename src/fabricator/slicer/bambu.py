@@ -30,10 +30,19 @@ _NOISE = re.compile(r"wayland|glfw|xdg|libEGL|MESA|dbus|gtk|gdk|pixbuf|thumbnail
 
 def command(info: dict, files: list[Path], work: Path, out: Path, name: str) -> list[str]:
     return [
-        info["exe"], "--arrange", "1",
-        "--load-settings", f"{work / 'machine.json'};{work / 'process.json'}",
-        "--load-filaments", str(work / "filament.json"),
-        "--slice", "0", "--outputdir", str(out), "--export-3mf", name,
+        info["exe"],
+        "--arrange",
+        "1",
+        "--load-settings",
+        f"{work / 'machine.json'};{work / 'process.json'}",
+        "--load-filaments",
+        str(work / "filament.json"),
+        "--slice",
+        "0",
+        "--outputdir",
+        str(out),
+        "--export-3mf",
+        name,
         *[str(f) for f in files],
     ]
 
@@ -60,8 +69,10 @@ def parse_result(out: Path) -> list[dict]:
     data = json.loads(f.read_text(encoding="utf-8"))
     if data.get("return_code", 0) != 0:
         raise ProjectError(
-            "The slicer couldn't slice this: " + _plain_error(str(data.get("error_string", "unknown problem")))
-            + " Build it again and check the results for problems.")
+            "The slicer couldn't slice this: "
+            + _plain_error(str(data.get("error_string", "unknown problem")))
+            + " Build it again and check the results for problems."
+        )
     plates = []
     for p in data.get("sliced_plates", []):
         grams = sum(float(fil.get("total_used_g", 0)) for fil in p.get("filaments", []))
@@ -84,7 +95,7 @@ def gcode_support_fraction(gcode: Path) -> float:
     xy_re = re.compile(r"\s[XY]-?\d")
     with gcode.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
-            if line.startswith("; FEATURE:") or line.startswith(";TYPE:"):  # ;TYPE: is OrcaSlicer's spelling
+            if line.startswith(("; FEATURE:", ";TYPE:")):  # ;TYPE: is OrcaSlicer's spelling
                 feature = line.split(":", 1)[1].strip()
             elif move.match(line):
                 m = e_re.search(line)
@@ -116,8 +127,15 @@ def gcode_header(gcode: Path) -> dict:
     return info
 
 
-def run(info: dict, profiles: dict, files: list[Path], out_file: Path | None = None,
-        timeout: int = TIMEOUT_SECONDS, cmd_builder=command, label: str = "Bambu Studio") -> dict:
+def run(
+    info: dict,
+    profiles: dict,
+    files: list[Path],
+    out_file: Path | None = None,
+    timeout: int = TIMEOUT_SECONDS,
+    cmd_builder=command,
+    label: str = "Bambu Studio",
+) -> dict:
     """Slice ``files`` together onto one bed. Returns {minutes, grams, support_grams, file, plates}."""
     for f in files:
         if not Path(f).exists():
@@ -130,30 +148,47 @@ def run(info: dict, profiles: dict, files: list[Path], out_file: Path | None = N
         name = "print.gcode.3mf"
         cmd = cmd_builder(info, [Path(f) for f in files], work, out, name)
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                  timeout=timeout, cwd=work, env=dict(os.environ))
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=work,
+                env=dict(os.environ),
+                check=False,
+            )
         except subprocess.TimeoutExpired:
             raise ProjectError(
                 f"{label} took longer than {timeout // 60} minutes to slice this, so it was stopped. "
-                "The piece may be very detailed; try a thicker layer height or fewer small details.") from None
+                "The piece may be very detailed; try a thicker layer height or fewer small details."
+            ) from None
         except OSError as e:
             raise ProjectError(f"Couldn't start {label} ({e}). Check the install with 'fabricator doctor'.") from None
         plates = parse_result(out)
         gcodes = sorted(out.glob("plate_*.gcode"), key=lambda p: int(re.findall(r"\d+", p.stem)[0]))
         if not plates and gcodes:  # no result.json: fall back to the gcode header
-            plates = [{"seconds": gcode_header(g).get("seconds", 0), "grams": gcode_header(g).get("grams", 0)}
-                      for g in gcodes]
+            plates = [
+                {"seconds": gcode_header(g).get("seconds", 0), "grams": gcode_header(g).get("grams", 0)} for g in gcodes
+            ]
         threemf = out / name
         if proc.returncode != 0 or not plates or not threemf.exists():
-            quiet = "\n".join(l for l in proc.stderr.splitlines() if not _NOISE.search(l))
+            quiet = "\n".join(line for line in proc.stderr.splitlines() if not _NOISE.search(line))
             raise ProjectError(
                 f"{label} didn't produce a print file (exit code {proc.returncode}). "
-                + (quiet.strip()[-400:] or "It gave no reason."))
+                + (quiet.strip()[-400:] or "It gave no reason.")
+            )
         seconds = sum(p["seconds"] for p in plates)
         grams = sum(p["grams"] for p in plates)
-        support = sum(p["grams"] * gcode_support_fraction(g) for g, p in zip(gcodes, plates))
-        result = {"minutes": seconds / 60, "grams": grams, "support_grams": support,
-                  "file": None, "plates": len(plates)}
+        support = sum(p["grams"] * gcode_support_fraction(g) for g, p in zip(gcodes, plates, strict=False))
+        result = {
+            "minutes": seconds / 60,
+            "grams": grams,
+            "support_grams": support,
+            "file": None,
+            "plates": len(plates),
+        }
         if out_file is not None:
             out_file.parent.mkdir(parents=True, exist_ok=True)
             out_file.write_bytes(threemf.read_bytes())

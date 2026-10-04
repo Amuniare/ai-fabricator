@@ -43,7 +43,8 @@ def _design_line(tb) -> int | None:
 
 
 def main(project_dir: Path, out_dir: Path, bed: tuple[float, float, float]) -> int:
-    from build123d import Compound, Shape, export_brep
+    from build123d import Compound, export_brep
+    from build123d.topology import Shape
 
     from .design import Context, Model, Params
     from .settings import Settings
@@ -69,11 +70,18 @@ def main(project_dir: Path, out_dir: Path, bed: tuple[float, float, float]) -> i
             shape = shape.solids()[0]
         file = out_dir / f"{part.id}.brep"
         export_brep(shape, str(file))
-        parts.append({
-            "id": part.id, "name": part.name, "file": file.name, "color": part.color,
-            "printed": part.printed, "hardware": part.hardware, "face_down": part.face_down,
-            "notes": part.notes,
-        })
+        parts.append(
+            {
+                "id": part.id,
+                "name": part.name,
+                "file": file.name,
+                "color": part.color,
+                "printed": part.printed,
+                "hardware": part.hardware,
+                "face_down": part.face_down,
+                "notes": part.notes,
+            }
+        )
 
     joints = []
     for i, joint in enumerate(model.joints):
@@ -82,17 +90,34 @@ def main(project_dir: Path, out_dir: Path, bed: tuple[float, float, float]) -> i
             file = out_dir / f"joint{i}_{key}.brep"
             export_brep(shape, str(file))
             features[key] = file.name
-        joints.append({
-            "a": joint.a, "b": joint.b, "kind": joint.kind, "fit": joint.fit,
-            "gap": joint.gap if joint.gap is not None else ctx.fits.get(joint.fit),
-            "hardware": joint.hardware, "at": joint.at, "axis": joint.axis,
-            "note": joint.note, "features": features,
-        })
+        joints.append(
+            {
+                "a": joint.a,
+                "b": joint.b,
+                "kind": joint.kind,
+                "fit": joint.fit,
+                "gap": joint.gap if joint.gap is not None else ctx.fits.get(joint.fit),
+                "hardware": joint.hardware,
+                "at": joint.at,
+                "axis": joint.axis,
+                "note": joint.note,
+                "features": features,
+            }
+        )
 
-    (out_dir / "raw.json").write_text(json.dumps({
-        "name": model.name, "parts": parts, "joints": joints,
-        "hardware": model.extra_hardware, "notes": model.notes,
-    }, indent=2), encoding="utf-8")
+    (out_dir / "raw.json").write_text(
+        json.dumps(
+            {
+                "name": model.name,
+                "parts": parts,
+                "joints": joints,
+                "hardware": model.extra_hardware,
+                "notes": model.notes,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return 0
 
 
@@ -103,9 +128,15 @@ if __name__ == "__main__":
         sys.exit(main(project_dir, out_dir, bed))  # type: ignore[arg-type]
     except Exception as exc:  # report every failure in a form the build can explain
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "error.json").write_text(json.dumps({
-            "error": f"{type(exc).__name__}: {exc}",
-            "design_line": _design_line(exc.__traceback__),
-            "traceback": traceback.format_exc(),
-        }, indent=2), encoding="utf-8")
+        (out_dir / "error.json").write_text(
+            json.dumps(
+                {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "design_line": _design_line(exc.__traceback__),
+                    "traceback": traceback.format_exc(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         sys.exit(1)

@@ -11,6 +11,7 @@ import re
 import shutil
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -45,14 +46,30 @@ def _number(value) -> float | None:
         return None
 
 
-def add_source(project: Project, what: str, value, unit: str = "mm", url: str = "",
-               kind: str = "manufacturer", confidence: str = "high", note: str = "") -> dict:
+def add_source(
+    project: Project,
+    what: str,
+    value,
+    unit: str = "mm",
+    url: str = "",
+    kind: str = "manufacturer",
+    confidence: str = "high",
+    note: str = "",
+) -> dict:
     """Record an outside value. Adds a "warning" if it conflicts with a better source."""
     if kind not in RANK:
         raise ProjectError(f"Unknown source kind '{kind}'. Use one of: {', '.join(RANK)}.")
     data = _read(project)
-    record = {"what": what, "value": value, "unit": unit, "url": url, "kind": kind,
-              "confidence": confidence, "note": note, "date": date.today().isoformat()}
+    record = {
+        "what": what,
+        "value": value,
+        "unit": unit,
+        "url": url,
+        "kind": kind,
+        "confidence": confidence,
+        "note": note,
+        "date": date.today().isoformat(),
+    }
 
     warning = None
     new_num = _number(value)
@@ -61,16 +78,21 @@ def add_source(project: Project, what: str, value, unit: str = "mm", url: str = 
             continue
         lower = RANK.index(kind) > RANK.index(old["kind"])
         old_num = _number(old.get("value"))
-        differs = (new_num is not None and old_num not in (None, 0.0)
-                   and abs(new_num - old_num) / abs(old_num) > DISAGREE)
+        differs = (
+            new_num is not None and old_num not in (None, 0.0) and abs(new_num - old_num) / abs(old_num) > DISAGREE
+        )
         if differs:
-            warning = (f"This {kind} value ({value} {unit}) disagrees with the {old['kind']} value "
-                       f"already recorded for '{what}' ({old['value']} {old.get('unit', '')}). "
-                       f"Check which is right before using it.")
+            warning = (
+                f"This {kind} value ({value} {unit}) disagrees with the {old['kind']} value "
+                f"already recorded for '{what}' ({old['value']} {old.get('unit', '')}). "
+                f"Check which is right before using it."
+            )
             break
         if lower and old_num != new_num:
-            warning = (f"A {old['kind']} source already gives '{what}' as {old['value']} "
-                       f"{old.get('unit', '')}; prefer that one over this {kind} source.")
+            warning = (
+                f"A {old['kind']} source already gives '{what}' as {old['value']} "
+                f"{old.get('unit', '')}; prefer that one over this {kind} source."
+            )
             break
 
     data["sources"].append(record)
@@ -84,7 +106,7 @@ def add_source(project: Project, what: str, value, unit: str = "mm", url: str = 
 def _bbox_from_trimesh(path: Path) -> list[float]:
     import trimesh
 
-    loaded = trimesh.load(str(path), force="scene")
+    loaded: Any = trimesh.load(str(path), force="scene")  # Scene or Trimesh; stubs say Geometry
     if hasattr(loaded, "dump"):
         meshes = [m for m in loaded.dump() if hasattr(m, "vertices") and len(m.vertices)]
         if not meshes:
@@ -106,15 +128,23 @@ def _bbox_from_step(path: Path) -> list[float]:
     return [round(float(v), 3) for v in size]
 
 
-def import_file(project: Project, file, name: str | None = None, url: str = "", author: str = "",
-                license: str = "unknown", confidence: str = "medium") -> dict:
+def import_file(
+    project: Project,
+    file,
+    name: str | None = None,
+    url: str = "",
+    author: str = "",
+    license: str = "unknown",
+    confidence: str = "medium",
+) -> dict:
     """Copy a shape file into the project, check it loads, and record where it came from."""
     src = Path(file).expanduser()
     ext = src.suffix.lower()
     if ext not in ALLOWED:
         raise ProjectError(
             f"Only shape files can be imported ({', '.join(sorted(ALLOWED))}), because they hold "
-            f"geometry and can't run code. '{src.name}' is not one of those.")
+            f"geometry and can't run code. '{src.name}' is not one of those."
+        )
     if not src.is_file():
         raise ProjectError(f"I can't find the file '{src}'.")
     name = slugify(name or src.stem).replace("-", "_")
@@ -126,7 +156,7 @@ def import_file(project: Project, file, name: str | None = None, url: str = "", 
     try:
         size_mm = _bbox_from_step(src) if ext in (".step", ".stp") else _bbox_from_trimesh(src)
     except Exception as e:
-        raise ProjectError(f"'{src.name}' doesn't load as a 3D shape ({e}). Nothing was imported.")
+        raise ProjectError(f"'{src.name}' doesn't load as a 3D shape ({e}). Nothing was imported.") from e
 
     data = _read(project)
     for old in data["imports"]:  # replacing an import of the same name: drop other formats
@@ -144,7 +174,10 @@ def import_file(project: Project, file, name: str | None = None, url: str = "", 
         "sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
         "bytes": dest.stat().st_size,
         "size_mm": size_mm,
-        "url": url, "author": author, "license": license, "confidence": confidence,
+        "url": url,
+        "author": author,
+        "license": license,
+        "confidence": confidence,
         "date": date.today().isoformat(),
     }
     data["imports"].append(record)
@@ -158,22 +191,26 @@ def load_import(project_dir, name: str):
     matches = [p for p in sorted(folder.glob(f"{name}.*")) if p.suffix.lower() in ALLOWED] if folder.is_dir() else []
     if not matches:
         have = sorted({p.stem for p in folder.glob("*") if p.suffix.lower() in ALLOWED}) if folder.is_dir() else []
-        raise ProjectError(f"No imported file called '{name}'." +
-                           (f" Imported so far: {', '.join(have)}." if have else " Nothing has been imported yet."))
+        raise ProjectError(
+            f"No imported file called '{name}'."
+            + (f" Imported so far: {', '.join(have)}." if have else " Nothing has been imported yet.")
+        )
     path = matches[0]
     ext = path.suffix.lower()
     try:
         if ext in (".step", ".stp"):
             from build123d import import_step
+
             return import_step(str(path))
         if ext == ".stl":
             from build123d import import_stl
+
             return import_stl(str(path))
         return _mesh_to_shape(path)
     except ProjectError:
         raise
     except Exception as e:
-        raise ProjectError(f"The imported file '{path.name}' couldn't be loaded ({e}).")
+        raise ProjectError(f"The imported file '{path.name}' couldn't be loaded ({e}).") from e
 
 
 def _mesh_to_shape(path: Path):
@@ -183,7 +220,7 @@ def _mesh_to_shape(path: Path):
     import trimesh
     from build123d import import_stl
 
-    loaded = trimesh.load(str(path), force="scene")
+    loaded: Any = trimesh.load(str(path), force="scene")  # Scene or Trimesh; stubs say Geometry
     mesh = trimesh.util.concatenate(list(loaded.dump())) if hasattr(loaded, "dump") else loaded
     with tempfile.TemporaryDirectory() as tmp:
         stl = Path(tmp) / "m.stl"

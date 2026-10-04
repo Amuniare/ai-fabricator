@@ -37,6 +37,7 @@ the way it will print, with its lowest point at z = 0, centred on x = y = 0.
 | `compare.py` | Slices several options and recommends one | `compare(project, settings, part, what) -> dict` |
 | `sources.py` | Records where outside numbers and files came from; imports STEP/STL as data | `add_source(...)`, `import_file(...)`, `load_import(project_dir, name)` |
 | `feedback.py` | Turns "the pins were too tight" into better fit gaps | `record(project, settings, fit, result, part, note) -> dict` |
+| `readme.py` | Each project's README.md page (pictures, pieces, print times, versions), remade after build and slice | `write(project) -> Path` |
 | `package.py` | The finished folder: parts, print files, guide | `make(project, settings, slice_plates=True) -> Path` |
 | `viewer.py` | A 3D view in the browser | `make(project, open_browser=True) -> Path` |
 | `doctor.py` | Checks the install; updates the tool | `run() -> list[(name, status, detail)]`, `update() -> str` |

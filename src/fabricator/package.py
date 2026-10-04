@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import base64
 import html
-import json
 import re
 import shutil
 from pathlib import Path
@@ -32,7 +31,7 @@ def _safe(name: str) -> str:
 
 
 def _fmt_minutes(minutes: float) -> str:
-    h, m = divmod(int(round(minutes)), 60)
+    h, m = divmod(round(minutes), 60)
     return f"{h} h {m:02d} min" if h else f"{m} min"
 
 
@@ -47,6 +46,7 @@ def _picture(project: Project, parts: list[str]) -> Path | None:
     """One picture of just these parts, or None when pictures can't be made."""
     try:
         from . import render
+
         shots = render.pictures(project, parts=parts, views=["angled"])
         return Path(shots[0]) if shots else None
     except Exception:  # a missing picture shouldn't stop the package
@@ -66,8 +66,9 @@ def make(project: Project, settings, slice_plates: bool = True) -> Path:
 
     data = viewer.load_model_json(project)
     if data.get("status") == "fail":
-        raise ProjectError("The last build has problems that must be fixed before packaging. "
-                           "Run 'fabricator check' to see them.")
+        raise ProjectError(
+            "The last build has problems that must be fixed before packaging. Run 'fabricator check' to see them."
+        )
     printed = [p for p in data["parts"] if p["printed"]]
     if not printed:
         raise ProjectError("This design has no printed pieces to package.")
@@ -120,8 +121,11 @@ def _readme(project: Project, sliced: bool) -> str:
     lines = [
         f"{project.name}: everything you need to make it.",
         "Open guide.html in your browser for the pieces, the shopping list and the assembly steps.",
-        ("Print files: open each Plate file in Bambu Studio and press Print."
-         if sliced else "Print files: open the files in Parts in Bambu Studio, pick your printer and press Print."),
+        (
+            "Print files: open each Plate file in Bambu Studio and press Print."
+            if sliced
+            else "Print files: open the files in Parts in Bambu Studio, pick your printer and press Print."
+        ),
         "Parts holds every piece as STL (lying the way it prints) and STEP (for editing in CAD).",
         "complete_model.step and complete_model.glb show the finished object; Source can rebuild it.",
     ]
@@ -151,28 +155,37 @@ def _guide(project: Project, data: dict, sliced: dict | None, plate_of: dict) ->
         rows.append(f"<tr><td>{e(p['id'])}</td><td>{e(p['name'])}</td><td>{e(size)} mm</td><td>{e(time)}</td></tr>")
 
     hardware = data.get("hardware") or {}
-    hw_html = ("<ul>" + "".join(f"<li>{q} &times; {e(item)}</li>" for item, q in hardware.items()) + "</ul>"
-               if hardware else "<p>None. Everything is printed.</p>")
+    hw_html = (
+        "<ul>" + "".join(f"<li>{q} &times; {e(item)}</li>" for item, q in hardware.items()) + "</ul>"
+        if hardware
+        else "<p>None. Everything is printed.</p>"
+    )
 
     steps = []
-    for n, j in enumerate(data.get("joints", []), start=1):
+    for _n, j in enumerate(data.get("joints", []), start=1):
         a, b = names.get(j["a"], j["a"]), names.get(j["b"], j["b"])
-        kind = JOINT_KINDS.get(j["kind"], j["kind"])
+        kind = JOINT_KINDS.get(j["kind"]) or j["kind"]
         hw = f" You will need: {e(', '.join(j['hardware']))}." if j.get("hardware") else ""
         note = f" {e(j['note'])}" if j.get("note") else ""
         img = _data_uri(_picture(project, [j["a"], j["b"]]))
         pic = f'<img alt="{e(a)} and {e(b)}" src="{img}">' if img else ""
         steps.append(
             f"<li><p><strong>Join {e(a)} ({e(j['a'])}) to {e(b)} ({e(j['b'])}).</strong> "
-            f"Joint: {e(j['kind'])}, {e(kind)}.{hw}{note}</p>{pic}</li>")
-    steps_html = ("<ol>" + "".join(steps) + "</ol>" if steps
-                  else "<p>This is a single piece, so there is nothing to assemble.</p>")
+            f"Joint: {e(j['kind'])}, {e(kind)}.{hw}{note}</p>{pic}</li>"
+        )
+    steps_html = (
+        "<ol>" + "".join(steps) + "</ol>"
+        if steps
+        else "<p>This is a single piece, so there is nothing to assemble.</p>"
+    )
 
     total = ""
     if sliced:
-        total = (f"<p>Printed on {e(sliced['printer'])} in {e(sliced['material'])}: "
-                 f"{_fmt_minutes(sliced['total_minutes'])} and {sliced['total_grams']:.0f} g of plastic "
-                 f"across {len(sliced['plates'])} plate(s).</p>")
+        total = (
+            f"<p>Printed on {e(sliced['printer'])} in {e(sliced['material'])}: "
+            f"{_fmt_minutes(sliced['total_minutes'])} and {sliced['total_grams']:.0f} g of plastic "
+            f"across {len(sliced['plates'])} plate(s).</p>"
+        )
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -189,12 +202,12 @@ def _guide(project: Project, data: dict, sliced: dict | None, plate_of: dict) ->
   li {{ margin-bottom:20px; }} .muted {{ color:var(--muted); }}
 </style></head><body>
 <h1>{e(project.name)}</h1>
-<p class="muted">{e(project.data.get('request') or '')}</p>
-{f'<img alt="The finished object" src="{overview_uri}">' if overview_uri else ''}
+<p class="muted">{e(project.data.get("request") or "")}</p>
+{f'<img alt="The finished object" src="{overview_uri}">' if overview_uri else ""}
 {total}
 <h2>Pieces to print</h2>
 <table><tr><th>ID</th><th>Name</th><th>Size as printed</th><th>Print time</th></tr>
-{''.join(rows)}</table>
+{"".join(rows)}</table>
 <h2>What to buy</h2>
 {hw_html}
 <h2>Putting it together</h2>

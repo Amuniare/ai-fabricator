@@ -19,13 +19,24 @@ from . import bambu
 
 def command(info: dict, files: list[Path], work: Path, out: Path, name: str) -> list[str]:
     return [
-        info["exe"], "--arrange", "1",
-        "--load-settings", f"{work / 'machine.json'};{work / 'process.json'}",
-        "--load-filaments", str(work / "filament.json"),
-        "--slice", "0", "--outputdir", str(out), "--export-3mf", name,
+        info["exe"],
+        "--arrange",
+        "1",
+        "--load-settings",
+        f"{work / 'machine.json'};{work / 'process.json'}",
+        "--load-filaments",
+        str(work / "filament.json"),
+        "--slice",
+        "0",
+        "--outputdir",
+        str(out),
+        "--export-3mf",
+        name,
         *[str(f) for f in files],
     ]
 
 
-def run(info: dict, profiles: dict, files: list[Path], out_file: Path | None = None, timeout: int = bambu.TIMEOUT_SECONDS) -> dict:
+def run(
+    info: dict, profiles: dict, files: list[Path], out_file: Path | None = None, timeout: int = bambu.TIMEOUT_SECONDS
+) -> dict:
     return bambu.run(info, profiles, files, out_file, timeout, cmd_builder=command, label="OrcaSlicer")

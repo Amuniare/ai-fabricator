@@ -29,12 +29,23 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import cast
 
-from build123d import Axis, Compound, Edge, Face, Plane, Shape, Solid, Vector, Wire
+from build123d import Axis, Compound, Edge, Face, Plane, ShapeList, Solid, Vector, Wire
+from build123d.topology import Shape
 
 __all__ = [
-    "JointResult", "peg", "dowel", "screw", "dovetail", "tongue_groove", "snap_hook",
-    "peg_size", "fuse", "cut", "one_solid",
+    "JointResult",
+    "cut",
+    "dovetail",
+    "dowel",
+    "fuse",
+    "one_solid",
+    "peg",
+    "peg_size",
+    "screw",
+    "snap_hook",
+    "tongue_groove",
 ]
 
 # Extra depth of a hole beyond the peg tip, so the peg bottoms out on its shoulder,
@@ -47,6 +58,7 @@ MOUTH_CHAMFER = 0.4
 
 
 # ---- small geometry helpers ----------------------------------------------------------
+
 
 def _v(p) -> Vector:
     return p if isinstance(p, Vector) else Vector(*p)
@@ -85,12 +97,14 @@ def _library(ctx):
     return Library(ctx)
 
 
-def one_solid(shape: Shape) -> Shape:
+def one_solid(shape: Shape | ShapeList | None) -> Shape:
     """A boolean result as a single Solid when it is one, else as it is."""
+    if shape is None:
+        raise ValueError("The two shapes don't overlap, so there is nothing to combine.")
     solids = shape.solids()
     if len(solids) == 1:
         return solids[0]
-    return shape
+    return cast(Shape, shape)
 
 
 def fuse(base: Shape, tools: list[Shape]) -> Shape:
@@ -136,7 +150,7 @@ def _frame(at: Vector, direction: Vector, along) -> Plane:
     """Local frame: z = direction, y = ``along`` (made perpendicular to z)."""
     z = _unit(direction)
     y = _unit(along)
-    y = (y - z * y.dot(z))
+    y = y - z * y.dot(z)
     if y.length < 1e-6:
         raise ValueError("The slide direction must not be parallel to the joint direction.")
     y = y.normalized()
@@ -166,6 +180,7 @@ def _ray_spans(shape: Shape, start: Vector, d: Vector, reach: float = 2000.0) ->
 
 # ---- the result ------------------------------------------------------------------------
 
+
 @dataclass
 class JointResult:
     """Changed shapes plus everything ``Model.join`` needs."""
@@ -194,13 +209,30 @@ class JointResult:
             for shape, name in self.parts:
                 pin = model.add(shape, name)
                 for other in (a, b):
-                    j = model.join(pin, other, self.kind, fit=self.fit, gap=self.gap,
-                                   at=_centre(shape), axis=self.axis, note=self.note)
+                    j = model.join(
+                        pin,
+                        other,
+                        self.kind,
+                        fit=self.fit,
+                        gap=self.gap,
+                        at=_centre(shape),
+                        axis=self.axis,
+                        note=self.note,
+                    )
                     j.features = {"male": shape}
                     made.append(j)
             return made
-        j = model.join(a, b, self.kind, fit=self.fit, gap=self.gap, hardware=self.hardware,
-                       at=self.at, axis=self.axis, note=self.note)
+        j = model.join(
+            a,
+            b,
+            self.kind,
+            fit=self.fit,
+            gap=self.gap,
+            hardware=self.hardware,
+            at=self.at,
+            axis=self.axis,
+            note=self.note,
+        )
         j.features = dict(self.features)
         made.append(j)
         return made
@@ -217,6 +249,7 @@ def _tuple(v: Vector) -> tuple[float, float, float]:
 
 # ---- pegs ------------------------------------------------------------------------------
 
+
 def peg_size(face_thickness: float) -> tuple[float, float]:
     """A sensible peg diameter and length for a meeting face this thick (mm)."""
     d = min(10.0, max(5.0, round(0.4 * face_thickness * 2) / 2))
@@ -229,19 +262,36 @@ def peg_tools(at: Vector, direction: Vector, diameter: float, length: float, gap
     r = diameter / 2
     c = min(0.6, 0.12 * diameter)
     male_profile = [(0, 0), (r, 0), (r, length - c), (r - c, length), (0, length)]
-    fused_profile = [(0, -OVERLAP)] + [(r, -OVERLAP)] + male_profile[2:]
+    fused_profile = [(0, -OVERLAP), (r, -OVERLAP), *male_profile[2:]]
     R = r + gap
     m = MOUTH_CHAMFER
     hole_profile = [
-        (0, -1.0), (R + m + 1.0, -1.0), (R + m, 0.0), (R, m),
-        (R, length + HOLE_EXTRA_DEPTH), (0, length + HOLE_EXTRA_DEPTH),
+        (0, -1.0),
+        (R + m + 1.0, -1.0),
+        (R + m, 0.0),
+        (R, m),
+        (R, length + HOLE_EXTRA_DEPTH),
+        (0, length + HOLE_EXTRA_DEPTH),
     ]
-    return (_revolved(fused_profile, at, direction), _revolved(male_profile, at, direction),
-            _revolved(hole_profile, at, direction))
+    return (
+        _revolved(fused_profile, at, direction),
+        _revolved(male_profile, at, direction),
+        _revolved(hole_profile, at, direction),
+    )
 
 
-def peg(a: Shape, b: Shape, at, direction, ctx=None, *, diameter: float = 6.0,
-        length: float | None = None, fit: str = "snug", gap: float | None = None) -> JointResult:
+def peg(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    ctx=None,
+    *,
+    diameter: float = 6.0,
+    length: float | None = None,
+    fit: str = "snug",
+    gap: float | None = None,
+) -> JointResult:
     """Pegs standing out of ``a`` at each point in ``at``, into holes in ``b``.
 
     The hole is bigger than the peg by the fit gap on every side and 0.5 mm deeper than the
@@ -253,19 +303,27 @@ def peg(a: Shape, b: Shape, at, direction, ctx=None, *, diameter: float = 6.0,
     adds, males, holes = [], [], []
     for p in _points(at):
         add, male, hole = peg_tools(p, d, diameter, length, g)
-        adds.append(add), males.append(male), holes.append(hole)
+        adds.append(add)
+        males.append(male)
+        holes.append(hole)
     pts = _points(at)
     n = len(pts)
     return JointResult(
-        a=fuse(a, adds), b=cut(b, holes), kind="peg", fit=fit, gap=g,
-        at=_tuple(pts[0]) if n == 1 else _centre(_compound(males)), axis=_tuple(d),
+        a=fuse(a, adds),
+        b=cut(b, holes),
+        kind="peg",
+        fit=fit,
+        gap=g,
+        at=_tuple(pts[0]) if n == 1 else _centre(_compound(males)),
+        axis=_tuple(d),
         note=f"{n} peg{'s' if n > 1 else ''}, {diameter:g} mm across and {length:g} mm long, "
-             f"in holes {diameter + 2 * g:g} mm across",
+        f"in holes {diameter + 2 * g:g} mm across",
         features={"male": _compound(males)},
     )
 
 
 # ---- dowels ----------------------------------------------------------------------------
+
 
 def dowel_tools(at: Vector, direction: Vector, diameter: float, length: float, gap: float):
     """(pin solid placed half in each part, hole tool for a, hole tool for b).
@@ -285,9 +343,19 @@ def dowel_tools(at: Vector, direction: Vector, diameter: float, length: float, g
     return pin, hole_a, hole_b
 
 
-def dowel(a: Shape, b: Shape, at, direction, ctx=None, *, diameter: float = 6.0,
-          length: float | None = None, fit: str = "snug", gap: float | None = None,
-          pin: str = "printed") -> JointResult:
+def dowel(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    ctx=None,
+    *,
+    diameter: float = 6.0,
+    length: float | None = None,
+    fit: str = "snug",
+    gap: float | None = None,
+    pin: str = "printed",
+) -> JointResult:
     """Holes in both parts joined by pins: printed pins (``r.parts``) or bought steel dowels.
 
     For ``pin="steel"`` the diameter and length should match a stock dowel (6x20 mm and so
@@ -299,15 +367,24 @@ def dowel(a: Shape, b: Shape, at, direction, ctx=None, *, diameter: float = 6.0,
     pins, ha, hb = [], [], []
     for p in _points(at):
         s, a_tool, b_tool = dowel_tools(p, d, diameter, length, g)
-        pins.append(s), ha.append(a_tool), hb.append(b_tool)
+        pins.append(s)
+        ha.append(a_tool)
+        hb.append(b_tool)
     n = len(pins)
     steel = pin == "steel"
     res = JointResult(
-        a=cut(a, ha), b=cut(b, hb), kind="dowel", fit=fit, gap=g,
-        at=_centre(_compound(pins)), axis=_tuple(d),
+        a=cut(a, ha),
+        b=cut(b, hb),
+        kind="dowel",
+        fit=fit,
+        gap=g,
+        at=_centre(_compound(pins)),
+        axis=_tuple(d),
         hardware=[f"{diameter:g}x{length:g} mm dowel pin"] * n if steel else [],
-        note=(f"{n} {'steel dowel' if steel else 'printed pin'}{'s' if n > 1 else ''}, "
-              f"{diameter:g} mm across and {length:g} mm long, in holes {diameter + 2 * g:g} mm across"),
+        note=(
+            f"{n} {'steel dowel' if steel else 'printed pin'}{'s' if n > 1 else ''}, "
+            f"{diameter:g} mm across and {length:g} mm long, in holes {diameter + 2 * g:g} mm across"
+        ),
         features={"male": _compound(pins), "pin": _compound(pins)},
     )
     if not steel:
@@ -317,8 +394,20 @@ def dowel(a: Shape, b: Shape, at, direction, ctx=None, *, diameter: float = 6.0,
 
 # ---- screws ----------------------------------------------------------------------------
 
-def screw(a: Shape, b: Shape, at, direction, ctx=None, *, size: str = "M3", length: float | None = None,
-          head: str = "cap", nut: str = "trap", fit: str = "hole") -> JointResult:
+
+def screw(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    ctx=None,
+    *,
+    size: str = "M3",
+    length: float | None = None,
+    head: str | None = "cap",
+    nut: str = "trap",
+    fit: str = "hole",
+) -> JointResult:
     """A screw through ``a`` into a nut or heat-set insert in ``b``.
 
     ``at`` is the point on the outside of ``a`` where the screw head goes; ``direction``
@@ -332,30 +421,52 @@ def screw(a: Shape, b: Shape, at, direction, ctx=None, *, size: str = "M3", leng
     s = hw.screw(size)
     d = _unit(direction)
     head_kind = head
-    head_names = {"cap": "socket head screw", "button": "button head screw",
-                  "countersunk": "countersunk screw", None: "socket head screw"}
+    head_names = {
+        "cap": "socket head screw",
+        "button": "button head screw",
+        "countersunk": "countersunk screw",
+        None: "socket head screw",
+    }
     if head_kind not in head_names:
         raise ValueError("head must be 'cap', 'button', 'countersunk' or None.")
-    recess = {"cap": s["cap_head_h"] + 0.2, "button": s["button_head_h"] + 0.2,
-              "countersunk": 0.0, None: 0.0}[head_kind]
-    head_d = {"cap": s["cap_head_d"], "button": s["button_head_d"], "countersunk": s["csk_head_d"],
-              None: s["cap_head_d"]}[head_kind]
+    recess = {"cap": s["cap_head_h"] + 0.2, "button": s["button_head_h"] + 0.2, "countersunk": 0.0, None: 0.0}[
+        head_kind
+    ]
+    head_d = {
+        "cap": s["cap_head_d"],
+        "button": s["button_head_d"],
+        "countersunk": s["csk_head_d"],
+        None: s["cap_head_d"],
+    }[head_kind]
     a_tools, b_tools, tools, hardware = [], [], [], []
+    note_extra = ""
     for p in _points(at):
         span_a = [sp for sp in _ray_spans(a, p, d) if sp[1] > 0.05]
         span_b = [sp for sp in _ray_spans(b, p, d) if sp[1] > 0.05]
         if not span_a or not span_b:
-            raise ValueError("The screw line at that point doesn't pass through both parts. "
-                             "Check 'at' is on the outside of the first part and 'direction' points into the second.")
+            raise ValueError(
+                "The screw line at that point doesn't pass through both parts. "
+                "Check 'at' is on the outside of the first part and 'direction' points into the second."
+            )
         t_a = span_a[0][1]
         s_b, e_b = next(((x, y) for x, y in span_b if y > t_a - 0.05), span_b[0])
-        a_tools.append(hw.screw_hole(size, length=t_a + 0.5, head=head_kind, at=p, direction=d, fit=fit,
-                                     head_recess=recess if head_kind in ("cap", "button") else None))
+        a_tools.append(
+            hw.screw_hole(
+                size,
+                length=t_a + 0.5,
+                head=head_kind,
+                at=p,
+                direction=d,
+                fit=fit,
+                head_recess=recess if head_kind in ("cap", "button") else None,
+            )
+        )
         if nut == "insert":
             ins = hw.insert(size)
             entry = p + d * s_b
             b_tools.append(hw.insert_hole(size, at=entry, direction=d))
             need = s_b - recess + ins["length"] - 0.5
+            L = float(length) if length is not None else hw.screw_length(size, need)
             longest = s_b - recess + ins["hole_depth"] - 0.3
             nut_name = f"{size} heat-set insert"
         else:
@@ -375,15 +486,10 @@ def screw(a: Shape, b: Shape, at, direction, ctx=None, *, size: str = "M3", leng
             n_depth = max(nt["thickness"] + 0.3, e_b - (recess + L - nt["thickness"] - 0.3))
             far = p + d * e_b
             b_tools.append(hw.nut_trap(size, at=far, direction=-d, depth=n_depth, fit=fit))
-            b_tools.append(hw.screw_hole(size, length=e_b - s_b + 1.0, head=None, at=p + d * s_b,
-                                         direction=d, fit=fit))
+            b_tools.append(hw.screw_hole(size, length=e_b - s_b + 1.0, head=None, at=p + d * s_b, direction=d, fit=fit))
             need = L
             nut_name = f"{size} nut"
-        if length is not None:
-            L = float(length)
-        elif nut == "insert":
-            L = hw.screw_length(size, need)
-        if L > longest + 1.0:
+        if longest + 1.0 < L:
             note_extra = f" The {L:g} mm screw sticks out {L - longest:.1f} mm past the nut side."
         else:
             note_extra = ""
@@ -391,10 +497,16 @@ def screw(a: Shape, b: Shape, at, direction, ctx=None, *, size: str = "M3", leng
         tools.append(_tool_path(p, d, recess, head_d, s["hex_key"]))
     n = len(_points(at))
     res = JointResult(
-        a=cut(a, a_tools), b=cut(b, b_tools), kind="screw", fit=fit, gap=g,
-        at=_tuple(_points(at)[0]), axis=_tuple(-d), hardware=hardware,
+        a=cut(a, a_tools),
+        b=cut(b, b_tools),
+        kind="screw",
+        fit=fit,
+        gap=g,
+        at=_tuple(_points(at)[0]),
+        axis=_tuple(-d),
+        hardware=hardware,
         note=f"{n} {size} screw{'s' if n > 1 else ''} into {'heat-set inserts' if nut == 'insert' else 'nuts'}."
-             + note_extra,
+        + note_extra,
         features={"tool": _compound(tools)},
     )
     return res
@@ -405,13 +517,13 @@ def _tool_path(p: Vector, d: Vector, recess: float, head_d: float, key: float, r
     parts = [_cylinder(head_d + 1.0, -reach, -0.2, p, d)]
     if recess > 0.3:
         parts.append(_cylinder(key * 1.2, -0.1, recess - 0.2, p, d))
-    return fuse(parts[0], parts[1:])
+    return cast(Solid, fuse(parts[0], cast("list[Shape]", parts[1:])))
 
 
 # ---- dovetail and tongue-and-groove --------------------------------------------------------
 
-def _offset_trapezoid(half_root: float, half_tip: float, height: float, g: float, extra_depth: float,
-                      below: float):
+
+def _offset_trapezoid(half_root: float, half_tip: float, height: float, g: float, extra_depth: float, below: float):
     """The groove outline: the tongue outline grown by ``g`` on the slanted sides,
     ``extra_depth`` past the tip, and continued ``below`` under the root."""
     slope = (half_tip - half_root) / height  # dx/dz of each side
@@ -425,8 +537,9 @@ def _offset_trapezoid(half_root: float, half_tip: float, height: float, g: float
     return [(-hw(-below), -below), (hw(-below), -below), (hw(top), top), (-hw(top), top)]
 
 
-def _ridge(a: Shape, b: Shape, at, direction, along, ctx, *, width, height, length, angle, fit, gap,
-           kind: str) -> JointResult:
+def _ridge(
+    a: Shape, b: Shape, at, direction, along, ctx, *, width, height, length, angle, fit, gap, kind: str
+) -> JointResult:
     g = _gap(ctx, fit, gap)
     p = _points(at)[0]
     d = _unit(direction)
@@ -441,8 +554,12 @@ def _ridge(a: Shape, b: Shape, at, direction, along, ctx, *, width, height, leng
         y0, y1 = -length / 2, length / 2
         open_both = False
     slope = (half_tip - half_root) / height
-    tongue_poly = [(-(half_root - slope * OVERLAP), -OVERLAP), (half_root - slope * OVERLAP, -OVERLAP),
-                   (half_tip, height), (-half_tip, height)]
+    tongue_poly = [
+        (-(half_root - slope * OVERLAP), -OVERLAP),
+        (half_root - slope * OVERLAP, -OVERLAP),
+        (half_tip, height),
+        (-half_tip, height),
+    ]
     male_poly = [(-half_root, 0.0), (half_root, 0.0), (half_tip, height), (-half_tip, height)]
     tongue = _prism(tongue_poly, y0, y1, frame)
     male = _prism(male_poly, y0, y1, frame)
@@ -461,8 +578,13 @@ def _ridge(a: Shape, b: Shape, at, direction, along, ctx, *, width, height, leng
     groove = _prism(groove_poly, gy0, gy1, frame)
     word = "dovetail" if kind == "dovetail" else "tongue"
     return JointResult(
-        a=fuse(a, [tongue]), b=cut(b, [groove]), kind=kind, fit=fit, gap=g,
-        at=_tuple(p), axis=_tuple(slide if kind == "dovetail" else d),
+        a=fuse(a, [tongue]),
+        b=cut(b, [groove]),
+        kind=kind,
+        fit=fit,
+        gap=g,
+        at=_tuple(p),
+        axis=_tuple(slide if kind == "dovetail" else d),
         note=f"a {width:g} mm wide, {height:g} mm tall {word} with {g:g} mm clearance each side",
         features={"male": male},
     )
@@ -490,9 +612,21 @@ def _face_prism(shape: Shape, p: Vector, d: Vector, height: float) -> Solid | No
     return Solid.extrude(base, d * (height + OVERLAP))
 
 
-def dovetail(a: Shape, b: Shape, at, direction, slide, ctx=None, *, width: float = 10.0,
-             height: float = 6.0, length: float | None = None, angle: float = 15.0,
-             fit: str = "sliding", gap: float | None = None) -> JointResult:
+def dovetail(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    slide,
+    ctx=None,
+    *,
+    width: float = 10.0,
+    height: float = 6.0,
+    length: float | None = None,
+    angle: float = 15.0,
+    fit: str = "sliding",
+    gap: float | None = None,
+) -> JointResult:
     """A dovetail tongue on ``a`` sliding into a matching slot in ``b``.
 
     ``at`` is the middle of the tongue's root on the meeting face; ``direction`` points from
@@ -501,23 +635,73 @@ def dovetail(a: Shape, b: Shape, at, direction, slide, ctx=None, *, width: float
     the face of ``a`` and the slot runs right through ``b``; otherwise the slot is open toward
     +``slide`` so ``b`` slides on from that side.
     """
-    return _ridge(a, b, at, direction, slide, ctx, width=width, height=height, length=length,
-                  angle=angle, fit=fit, gap=gap, kind="dovetail")
+    return _ridge(
+        a,
+        b,
+        at,
+        direction,
+        slide,
+        ctx,
+        width=width,
+        height=height,
+        length=length,
+        angle=angle,
+        fit=fit,
+        gap=gap,
+        kind="dovetail",
+    )
 
 
-def tongue_groove(a: Shape, b: Shape, at, direction, along, ctx=None, *, width: float = 4.0,
-                  height: float = 4.0, length: float | None = None, fit: str = "snug",
-                  gap: float | None = None) -> JointResult:
+def tongue_groove(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    along,
+    ctx=None,
+    *,
+    width: float = 4.0,
+    height: float = 4.0,
+    length: float | None = None,
+    fit: str = "snug",
+    gap: float | None = None,
+) -> JointResult:
     """A straight ridge on ``a`` along ``along`` that pushes into a groove in ``b``."""
-    return _ridge(a, b, at, direction, along, ctx, width=width, height=height, length=length,
-                  angle=0.0, fit=fit, gap=gap, kind="tongue-groove")
+    return _ridge(
+        a,
+        b,
+        at,
+        direction,
+        along,
+        ctx,
+        width=width,
+        height=height,
+        length=length,
+        angle=0.0,
+        fit=fit,
+        gap=gap,
+        kind="tongue-groove",
+    )
 
 
 # ---- snap hooks --------------------------------------------------------------------------
 
-def snap_hook(a: Shape, b: Shape, at, direction, hook, ctx=None, *, length: float = 12.0,
-              width: float = 6.0, thickness: float | None = None, undercut: float | None = None,
-              fit: str = "sliding", gap: float | None = None) -> JointResult:
+
+def snap_hook(
+    a: Shape,
+    b: Shape,
+    at,
+    direction,
+    hook,
+    ctx=None,
+    *,
+    length: float = 12.0,
+    width: float = 6.0,
+    thickness: float | None = None,
+    undercut: float | None = None,
+    fit: str = "sliding",
+    gap: float | None = None,
+) -> JointResult:
     """A flexible cantilever hook on ``a`` whose lip clicks into a recess in ``b``'s wall.
 
     The beam starts at ``at`` on ``a`` and runs ``length`` mm along ``direction``. Its outer
@@ -532,7 +716,7 @@ def snap_hook(a: Shape, b: Shape, at, direction, hook, ctx=None, *, length: floa
     hk = _unit(hook)
     t = thickness or max(1.6, round(length / 7, 1))
     # Allowed deflection of a cantilever: y = 2/3 * strain * L^2 / t (strain 2% for PLA).
-    y_allowed = 2 / 3 * 0.02 * length ** 2 / t
+    y_allowed = 2 / 3 * 0.02 * length**2 / t
     u = undercut or round(min(1.2, max(0.4, y_allowed)), 2)
     lip_h = max(2.0, 1.5 * u)  # lip length along the beam
     # Local frame: z = hook (outward), y = direction (along the beam).
@@ -550,8 +734,13 @@ def snap_hook(a: Shape, b: Shape, at, direction, hook, ctx=None, *, length: floa
     male = frame.location * Solid.extrude(Face(male_wire), Vector(width, 0, 0))
     recess = _box(-width / 2 - g, width / 2 + g, y_ret - g, length + g, -1.0, u + HOLE_EXTRA_DEPTH, frame)
     return JointResult(
-        a=fuse(a, [beam, lip]), b=cut(b, [recess]), kind="snap", fit=fit, gap=g,
-        at=_tuple(p), axis=_tuple(-d),
+        a=fuse(a, [beam, lip]),
+        b=cut(b, [recess]),
+        kind="snap",
+        fit=fit,
+        gap=g,
+        at=_tuple(p),
+        axis=_tuple(-d),
         note=f"a {length:g} mm snap hook, {t:g} mm thick, with a {u:g} mm lip",
         features={"male": male},
     )

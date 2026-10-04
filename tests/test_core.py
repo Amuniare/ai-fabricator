@@ -33,10 +33,13 @@ def test_find_by_name_slug_and_part():
 def test_versions_save_and_restore():
     p = Project.create("Box")
     v1 = p.save_version("first")
+    assert v1 is not None
     assert v1["number"] == 1
     assert p.save_version("no change") is None
     p.update(parameters={"width": 99})
-    assert p.save_version("wider")["number"] == 2
+    v2 = p.save_version("wider")
+    assert v2 is not None
+    assert v2["number"] == 2
     p.restore_version(1)
     assert p.data["parameters"]["width"] == 60.0
     assert [v["label"] for v in p.versions()] == ["first", "wider", "back to version 1"]
@@ -85,6 +88,6 @@ def test_runner_loads_parts_and_joints():
     )
     model = run_design(p, (180, 180, 180))
     assert [x.id for x in model.parts] == ["P01", "P02"]
-    assert model.parts[1].shape.bounding_box().min.X == pytest.approx(15)
+    assert pytest.approx(15) == model.parts[1].shape.bounding_box().min.X
     assert model.joints[0].kind == "glue"
     assert model.extra_hardware == ["M3x10 screw", "M3x10 screw"]

@@ -1,5 +1,7 @@
+from typing import Any, cast
+
 import numpy as np
-from build123d import Box, Cylinder, Pos, Rot
+from build123d import Box, Cylinder, Pos
 
 from fabricator import orient
 from fabricator.design import Part3D
@@ -31,7 +33,11 @@ def test_t_flat_needs_no_support_but_standing_on_stem_does():
     best = cands[0]
     assert not best.support_needed
     on_stem = [c for c in cands if c.height_mm > 55]
-    assert on_stem and all(c.support_needed for c in on_stem if c.face_down in ("-X", "+X", "-Y", "+Y") and c.height_mm > 55 and c.contact_area_mm2 < 300)
+    assert on_stem and all(
+        c.support_needed
+        for c in on_stem
+        if c.face_down in ("-X", "+X", "-Y", "+Y") and c.height_mm > 55 and c.contact_area_mm2 < 300
+    )
 
 
 def test_tall_pillar_is_laid_down():
@@ -57,7 +63,7 @@ def test_place_on_bed_matches_orientation():
     assert abs(bb.min.Z) < 1e-6
     assert abs((bb.min.X + bb.max.X) / 2) < 1e-6 and abs((bb.min.Y + bb.max.Y) / 2) < 1e-6
     assert abs(bb.size.Z - c.height_mm) < 0.1
-    assert abs(placed.volume - shape.volume) < 1e-3 * shape.volume
+    assert abs(cast(Any, placed).volume - cast(Any, shape).volume) < 1e-3 * cast(Any, shape).volume
 
 
 def test_quarter_turn_about_z_to_fit():

@@ -32,9 +32,11 @@ from __future__ import annotations
 import colorsys
 import itertools
 import math
+from typing import Any, cast
 
 import numpy as np
-from build123d import Compound, GeomType, Keep, Plane, Shape, Solid, Vector
+from build123d import Compound, GeomType, Keep, Plane, Solid, Vector
+from build123d.topology import Shape
 
 from . import joints as J
 from .design import Joint, Model, Part3D
@@ -48,6 +50,7 @@ STEEL_DOWELS = {"d": [3, 4, 5, 6, 8, 10], "l": [10, 12, 16, 20, 25, 30, 40]}
 
 
 # ---- fitting the bed ----------------------------------------------------------------
+
 
 def usable_bed(bed) -> tuple[float, float, float]:
     """Space a piece may use: bed minus a margin at the edges, and a little off the height."""
@@ -71,20 +74,21 @@ def _plan(size, bed, reserve: float = 0.0) -> tuple[tuple[int, int, int], tuple[
     ``reserve`` is room kept along a cut axis for what a joint adds (a peg standing out).
     """
     use = usable_bed(bed)
-    best = None
+    best: tuple[tuple[int, int], tuple[int, ...], tuple[float, ...]] | None = None
     for perm in itertools.permutations(range(3)):
-        allowed = tuple(use[perm[i]] if size[i] <= use[perm[i]] + 1e-6 else use[perm[i]] - reserve
-                        for i in range(3))
+        allowed = tuple(use[perm[i]] if size[i] <= use[perm[i]] + 1e-6 else use[perm[i]] - reserve for i in range(3))
         counts = tuple(max(1, math.ceil(size[i] / allowed[i] - 1e-9)) for i in range(3))
         # fewest pieces, then smallest total cut area, then a fixed order
         cut_area = sum((counts[i] - 1) * size[(i + 1) % 3] * size[(i + 2) % 3] for i in range(3))
         key = (math.prod(counts), cut_area)
         if best is None or key < best[0]:
             best = (key, counts, allowed)
-    return best[1], best[2]
+    assert best is not None  # permutations(range(3)) always yields 6 candidates
+    return cast("tuple[int, int, int]", best[1]), cast("tuple[float, float, float]", best[2])
 
 
 # ---- choosing where to cut ---------------------------------------------------------------
+
 
 def _profile(mesh, axis: int, xs: np.ndarray):
     """Cross-section area and outline length of a mesh at each position along an axis."""
@@ -94,7 +98,7 @@ def _profile(mesh, axis: int, xs: np.ndarray):
     lines, tfs, faces = trimesh.intersections.mesh_multiplane(mesh, np.zeros(3), normal, heights=xs)
     areas = np.zeros(len(xs))
     perims = np.zeros(len(xs))
-    for i, (seg, tf, fidx) in enumerate(zip(lines, tfs, faces)):
+    for i, (seg, tf, fidx) in enumerate(zip(lines, tfs, faces, strict=False)):
         if len(seg) == 0:
             continue
         n_local = (tf[:3, :3].T @ mesh.face_normals[fidx].T).T[:, :2]
@@ -118,7 +122,7 @@ def choose_cuts(shape: Shape, axis: int, pieces: int, max_len: float) -> list[fl
     mesh = to_mesh(shape, tolerance=0.1)
     for n in range(pieces, pieces + 4):
         # Sample positions are an exact fraction of the length, so equal pieces are possible.
-        k = n * max(1, int(round(span / min(4.0, max(0.5, span / 250)) / n)))
+        k = n * max(1, round(span / min(4.0, max(0.5, span / 250)) / n))
         step = span / k
         xs = lo + step * np.arange(1, k)
         cost = _cut_costs(mesh, axis, xs, step)
@@ -137,10 +141,10 @@ def _cut_costs(mesh, axis: int, xs: np.ndarray, step: float) -> np.ndarray:
     c_max = max(compact.max(), 1e-9)
     # How much the cross-section changes within a peg's depth either side of each position:
     # a hole, a rib or the edge of a feature nearby.
-    w = max(1, int(math.ceil(10.0 / step)))
+    w = max(1, math.ceil(10.0 / step))
     change = np.zeros(len(xs))
     for i in range(len(xs)):
-        window = areas[max(0, i - w): i + w + 1]
+        window = areas[max(0, i - w) : i + w + 1]
         change[i] = np.abs(window - areas[i]).max() / a_max
     cost = 2.0 * (1 - areas / a_max) + 1.0 * (1 - compact / c_max) + 4.0 * change
     return np.where(areas <= 1e-6, 1e6, cost)
@@ -183,6 +187,7 @@ def _best_cuts(xs, cost, lo, hi, n, max_len):
 
 # ---- cutting -----------------------------------------------------------------------------
 
+
 def _plane(axis: int, at: float) -> Plane:
     origin = [0.0, 0.0, 0.0]
     origin[axis] = at
@@ -196,7 +201,7 @@ def _cut_along(shape: Shape, axis: int, cuts: list[float]) -> list[list[Solid]]:
     for at in sorted(cuts):
         result = rest.split(_plane(axis, at), keep=Keep.BOTH)
         below, above = [], []
-        for part in result if isinstance(result, (list, tuple)) else [result]:
+        for part in cast("Any", result if isinstance(result, (list, tuple)) else [result]):
             if part is None:
                 continue
             for s in part.solids():
@@ -208,24 +213,24 @@ def _cut_along(shape: Shape, axis: int, cuts: list[float]) -> list[list[Solid]]:
 
 
 def _solid_key(s: Shape):
-    c = s.center()
+    c = cast("Any", s).center()
     return (round(c.X, 2), round(c.Y, 2), round(c.Z, 2))
 
 
 class _Piece:
-    def __init__(self, shape, path):
+    def __init__(self, shape, path: list[tuple[int, ...]]):
         self.shape = shape
         self.path = path  # [(axis, index, count, solid_no, solids)] from each cutting level
 
 
-def _partition(shape: Shape, bed, seams: list[tuple[int, float]], cuts_log: list, reserve: float = 0.0,
-               depth: int = 0, path=()) -> list[_Piece]:
+def _partition(
+    shape: Shape, bed, seams: list[tuple[int, float]], cuts_log: list, reserve: float = 0.0, depth: int = 0, path=()
+) -> list[_Piece]:
     """Cut ``shape`` until every piece fits. Manual seams are applied first."""
     size = size_of(shape)
     if seams:
         bb = shape.bounding_box()
-        mine = [(a, x) for a, x in seams
-                if tuple(bb.min)[a] + 0.5 < x < tuple(bb.max)[a] - 0.5]
+        mine = [(a, x) for a, x in seams if tuple(bb.min)[a] + 0.5 < x < tuple(bb.max)[a] - 0.5]
         if mine:
             axis = mine[0][0]
             here = sorted(x for a, x in mine if a == axis)
@@ -247,11 +252,12 @@ def _apply(shape, axis, cuts, bed, seams, cuts_log, reserve, depth, path, manual
     for i, solids in enumerate(slabs):
         for k, s in enumerate(solids):
             step = (axis, i, len(slabs), k, len(solids))
-            out += _partition(s, bed, seams, cuts_log, reserve, depth + 1, path + (step,))
+            out += _partition(s, bed, seams, cuts_log, reserve, depth + 1, (*path, step))
     return out
 
 
 # ---- the joint faces ------------------------------------------------------------------------
+
 
 def _on_plane(f, axis: int, at: float) -> bool:
     return abs(tuple(f.center())[axis] - at) <= 1e-3 and tuple(f.bounding_box().size)[axis] <= 1e-3
@@ -272,8 +278,11 @@ def _contacts(pieces: list[_Piece], cuts_log) -> list[dict]:
         for i in lows:
             for j in highs:
                 bi, bj = boxes[i], boxes[j]
-                if any(tuple(bi.max)[k] <= tuple(bj.min)[k] + 1e-3 or
-                       tuple(bj.max)[k] <= tuple(bi.min)[k] + 1e-3 for k in range(3) if k != axis):
+                if any(
+                    tuple(bi.max)[k] <= tuple(bj.min)[k] + 1e-3 or tuple(bj.max)[k] <= tuple(bi.min)[k] + 1e-3
+                    for k in range(3)
+                    if k != axis
+                ):
                     continue
                 shared = []
                 for fi in _faces_on_plane(pieces[i].shape, axis, at):
@@ -331,7 +340,7 @@ class _Section2D:
     def edge_distance(self, p: np.ndarray) -> np.ndarray:
         a, b = self.segs[:, 0], self.segs[:, 1]
         ab = b - a
-        L2 = np.maximum((ab ** 2).sum(1), 1e-12)
+        L2 = np.maximum((ab**2).sum(1), 1e-12)
         ap = p[:, None, :] - a[None]
         t = np.clip((ap * ab[None]).sum(2) / L2, 0, 1)
         closest = a[None] + t[..., None] * ab[None]
@@ -340,6 +349,7 @@ class _Section2D:
     def grid(self):
         ext = self.hi - self.lo
         h = float(np.clip(min(ext) / 16, 0.4, 3.0))
+
         def axis_points(lo, hi):  # odd count, centred, so the middle is always a candidate
             n = int((hi - lo) / h) | 1
             return lo + (hi - lo - (n - 1) * h) / 2 + h * np.arange(n)
@@ -360,8 +370,7 @@ class _Section2D:
         return Vector(*xyz)
 
 
-def _spread(P: np.ndarray, k: int, min_sep: float, edge: np.ndarray | None = None,
-            weight: float = 1.5) -> list[int]:
+def _spread(P: np.ndarray, k: int, min_sep: float, edge: np.ndarray | None = None, weight: float = 1.5) -> list[int]:
     """Order points so each next one is far from those already picked and well inside the face.
 
     Score = distance to the nearest point already picked (or to the middle, for the first)
@@ -382,23 +391,25 @@ def _spread(P: np.ndarray, k: int, min_sep: float, edge: np.ndarray | None = Non
         if not np.isfinite(score[j]):
             break
         chosen.append(j)
-        dmin = np.minimum(dmin, np.sqrt(((P - P[j]) ** 2).sum(1))) if len(chosen) > 1 else \
-            np.sqrt(((P - P[j]) ** 2).sum(1))
+        dmin = (
+            np.minimum(dmin, np.sqrt(((P - P[j]) ** 2).sum(1)))
+            if len(chosen) > 1
+            else np.sqrt(((P - P[j]) ** 2).sum(1))
+        )
     return chosen
 
 
 def _contained(container: Shape, tool: Shape, share: float = 0.995) -> bool:
     """True when ``tool`` lies (almost) entirely inside ``container``."""
     cb, tb = container.bounding_box(), tool.bounding_box()
-    if any(tuple(tb.min)[k] < tuple(cb.min)[k] - 1e-6 or tuple(tb.max)[k] > tuple(cb.max)[k] + 1e-6
-           for k in range(3)):
+    if any(tuple(tb.min)[k] < tuple(cb.min)[k] - 1e-6 or tuple(tb.max)[k] > tuple(cb.max)[k] + 1e-6 for k in range(3)):
         return False
     try:
         common = container.intersect(tool)
     except Exception:
         return False
-    vol = sum(s.volume for s in common.solids()) if common is not None else 0.0
-    return vol >= share * tool.volume
+    vol = sum(cast("Any", s).volume for s in common.solids()) if common is not None else 0.0
+    return vol >= share * cast("Any", tool).volume
 
 
 def _boxes_clash(bb, others, tag=None) -> bool:
@@ -407,13 +418,13 @@ def _boxes_clash(bb, others, tag=None) -> bool:
     for o, otag in others:
         if tag is not None and otag == tag:
             continue
-        if all(tuple(bb.min)[k] < tuple(o.max)[k] and tuple(o.min)[k] < tuple(bb.max)[k]
-               for k in range(3)):
+        if all(tuple(bb.min)[k] < tuple(o.max)[k] and tuple(o.min)[k] < tuple(bb.max)[k] for k in range(3)):
             return True
     return False
 
 
 # ---- placing joints on one contact -------------------------------------------------------------
+
 
 class _Joiner:
     def __init__(self, pieces, ctx, options, messages, face_down):
@@ -444,15 +455,11 @@ class _Joiner:
         if self.face_down:
             sign = -1.0 if self.face_down.startswith("-") else 1.0
             down = np.eye(3)["XYZ".index(self.face_down[-1].upper())] * sign
-            if float(np.dot(up, down)) > 0.5:
-                return False
-            return True
+            return not float(np.dot(up, down)) > 0.5
         low, high = self.pieces[c["low"]].shape, self.pieces[c["high"]].shape
         low_big = _cut_face_is_largest(low, axis, c["at"])
         high_big = _cut_face_is_largest(high, axis, c["at"])
-        if low_big and not high_big:
-            return False
-        return True
+        return not (low_big and not high_big)
 
     def add(self, c) -> None:
         before = len(self.joints)
@@ -493,14 +500,23 @@ class _Joiner:
         if not done and kind in ("peg", "dowel"):
             done = self._pegs(c, sec, a_i, b_i, d, kind)
         if not done:
-            self.joints.append(dict(a=a_i, b=b_i, kind="glue", features={}, hardware=[],
-                                    at=_centre_of(c["faces"]), axis=d,
-                                    note=f"the meeting face is too small for {kind}s; glue the faces together"))
+            self.joints.append(
+                {
+                    "a": a_i,
+                    "b": b_i,
+                    "kind": "glue",
+                    "features": {},
+                    "hardware": [],
+                    "at": _centre_of(c["faces"]),
+                    "axis": d,
+                    "note": f"the meeting face is too small for {kind}s; glue the faces together",
+                }
+            )
             self.notes.append("glue")
 
     # pegs and dowels
     def _pegs(self, c, sec, a_i, b_i, d, kind) -> bool:
-        P, dist, h = sec.grid()
+        P, dist, _h = sec.grid()
         if len(P) == 0:
             return False
         m = float(dist.max())
@@ -523,7 +539,7 @@ class _Joiner:
             return Pv, order, k, sep, fits
 
         # The biggest peg that still allows two pegs (one round peg alone lets pieces twist).
-        sizes = [d for d in np.arange(best_dia, 3.99, -0.5)]
+        sizes = list(np.arange(best_dia, 3.99, -0.5))
         plans = [(d, plan2d(d)) for d in sizes]
         plans = [(d, pl) for d, pl in plans if pl is not None]
         if not plans:
@@ -557,12 +573,20 @@ class _Joiner:
                 self.adds[a_i].append(add)
                 self.subs[b_i].append(hole)
                 males.append(male)
-            self.joints.append(dict(
-                a=a_i, b=b_i, kind="peg", hardware=[], at=_centre_of(c["faces"]), axis=d,
-                features={"male": J._compound(males)},
-                note=f"{len(chosen)} peg{'s' if len(chosen) > 1 else ''} {dia:g} mm across and {L:g} mm long "
-                     f"in holes {dia + 2 * g:g} mm across",
-                count=len(chosen)))
+            self.joints.append(
+                {
+                    "a": a_i,
+                    "b": b_i,
+                    "kind": "peg",
+                    "hardware": [],
+                    "at": _centre_of(c["faces"]),
+                    "axis": d,
+                    "features": {"male": J._compound(males)},
+                    "note": f"{len(chosen)} peg{'s' if len(chosen) > 1 else ''} {dia:g} mm across and {L:g} mm long "
+                    f"in holes {dia + 2 * g:g} mm across",
+                    "count": len(chosen),
+                }
+            )
             if len(chosen) == 1:
                 self.notes.append("single")
             return True
@@ -579,18 +603,37 @@ class _Joiner:
             self.subs[b_i].append(hole_b)
             pins.append(pin)
         if steel:
-            self.joints.append(dict(
-                a=a_i, b=b_i, kind="dowel", at=_centre_of(c["faces"]), axis=d,
-                hardware=[f"{pin_d:g}x{pin_len:g} mm dowel pin"] * len(pins),
-                features={"pin": J._compound(pins)},
-                note=f"{len(pins)} steel dowel pin{'s' if len(pins) > 1 else ''} {pin_d:g} x {pin_len:g} mm "
-                     f"in holes {pin_d + 2 * g:g} mm across", count=len(pins)))
+            self.joints.append(
+                {
+                    "a": a_i,
+                    "b": b_i,
+                    "kind": "dowel",
+                    "at": _centre_of(c["faces"]),
+                    "axis": d,
+                    "hardware": [f"{pin_d:g}x{pin_len:g} mm dowel pin"] * len(pins),
+                    "features": {"pin": J._compound(pins)},
+                    "note": f"{len(pins)} steel dowel pin{'s' if len(pins) > 1 else ''} {pin_d:g} x {pin_len:g} mm "
+                    f"in holes {pin_d + 2 * g:g} mm across",
+                    "count": len(pins),
+                }
+            )
         else:
             for pin in pins:
-                self.joints.append(dict(a=a_i, b=b_i, kind="dowel", at=_centre_of(c["faces"]), axis=d,
-                                        hardware=[], features={"pin": pin}, pin=pin,
-                                        note=f"a printed pin {pin_d:g} mm across and {pin_len:g} mm long, "
-                                             f"in holes {pin_d + 2 * g:g} mm across", count=1))
+                self.joints.append(
+                    {
+                        "a": a_i,
+                        "b": b_i,
+                        "kind": "dowel",
+                        "at": _centre_of(c["faces"]),
+                        "axis": d,
+                        "hardware": [],
+                        "features": {"pin": pin},
+                        "pin": pin,
+                        "note": f"a printed pin {pin_d:g} mm across and {pin_len:g} mm long, "
+                        f"in holes {pin_d + 2 * g:g} mm across",
+                        "count": 1,
+                    }
+                )
         return True
 
     def _fit_site(self, p3, d, dia, length, A, B, a_i, b_i, kind):
@@ -615,7 +658,7 @@ class _Joiner:
 
     # dovetail / tongue-and-groove
     def _ridge(self, c, sec, a_i, b_i, d, kind) -> bool:
-        P, dist, h = sec.grid()
+        P, _dist, h = sec.grid()
         if len(P) == 0:
             return False
         ext = sec.hi - sec.lo
@@ -659,16 +702,41 @@ class _Joiner:
                 p3 = sec.to3d(q, c["at"])
                 along = Vector(*np.eye(3)[axis3])
                 try:
-                    res = J._ridge(A, B, p3, d, along, self.ctx, width=width, height=height, length=None,
-                                   angle=angle, fit="sliding" if kind == "dovetail" else self.fit, gap=None,
-                                   kind=kind)
+                    res = J._ridge(
+                        A,
+                        B,
+                        p3,
+                        d,
+                        along,
+                        self.ctx,
+                        width=width,
+                        height=height,
+                        length=None,
+                        angle=angle,
+                        fit="sliding" if kind == "dovetail" else self.fit,
+                        gap=None,
+                        kind=kind,
+                    )
                 except Exception:
                     return False
+                assert res.axis is not None  # _ridge always sets the axis
                 self.pieces[a_i].shape = res.a
                 self.pieces[b_i].shape = res.b
-                self.joints.append(dict(a=a_i, b=b_i, kind=kind, hardware=[], at=_centre_of(c["faces"]),
-                                        axis=Vector(*res.axis), features=res.features, note=res.note,
-                                        gap=res.gap, fit=res.fit, count=1))
+                self.joints.append(
+                    {
+                        "a": a_i,
+                        "b": b_i,
+                        "kind": kind,
+                        "hardware": [],
+                        "at": _centre_of(c["faces"]),
+                        "axis": Vector(*res.axis),
+                        "features": res.features,
+                        "note": res.note,
+                        "gap": res.gap,
+                        "fit": res.fit,
+                        "count": 1,
+                    }
+                )
                 return True
         return False
 
@@ -690,7 +758,7 @@ class _Joiner:
         nut_w = nt["across_corners"] + 2 * g if "across_corners" in nt else nt["across_flats"] * 1.155 + 2 * g
         nut_h = nt["thickness"] + 0.4
         half = max(win_w, nut_w) / 2
-        P, dist, h = sec.grid()
+        P, dist, _h = sec.grid()
         ok = dist >= half + wall
         Pv = P[ok]
         if len(Pv) == 0:
@@ -719,15 +787,19 @@ class _Joiner:
             # material behind the window in a, and past the nut in b
             spans_a = J._ray_spans(A, p3, -d)
             spans_b = J._ray_spans(B, p3, d)
-            if not spans_a or not spans_b or spans_a[0][1] < wall_a + win_len + wall \
-                    or spans_b[0][1] < L - wall_a + 2 + wall:
+            if (
+                not spans_a
+                or not spans_b
+                or spans_a[0][1] < wall_a + win_len + wall
+                or spans_b[0][1] < L - wall_a + 2 + wall
+            ):
                 continue
             chosen.append((q, p3, e3, ka, kb))
         if not chosen:
             return False
         tools, hardware = [], []
         reach = 400.0
-        for q, p3, e3, ka, kb in chosen:
+        for _q, p3, e3, ka, kb in chosen:
             frame = Plane(origin=p3, x_dir=e3, z_dir=d)
             # a: clearance hole from the window to the cut face, and the window
             self.subs[a_i].append(J._cylinder(s["clearance"] + 2 * g, -wall_a - 0.5, 1.0, p3, d))
@@ -743,12 +815,20 @@ class _Joiner:
             tools.append(J._cylinder(s["hex_key"] * 1.2, -wall_a - win_len + 0.3, -wall_a - head_h - 0.3, p3, d))
             self.keepouts[a_i].append((ka, self.tag))
             self.keepouts[b_i].append((kb, self.tag))
-        self.joints.append(dict(
-            a=a_i, b=b_i, kind="screw", at=_centre_of(c["faces"]), axis=d, hardware=hardware,
-            features={"tool": J._compound(tools)},
-            note=f"{len(chosen)} {size}x{L:g} screw{'s' if len(chosen) > 1 else ''} into nuts; each screw and nut "
-                 "drops into a pocket open to the side, and is tightened with a hex key",
-            count=len(chosen)))
+        self.joints.append(
+            {
+                "a": a_i,
+                "b": b_i,
+                "kind": "screw",
+                "at": _centre_of(c["faces"]),
+                "axis": d,
+                "hardware": hardware,
+                "features": {"tool": J._compound(tools)},
+                "note": f"{len(chosen)} {size}x{L:g} screw{'s' if len(chosen) > 1 else ''} into nuts; each screw and nut "
+                "drops into a pocket open to the side, and is tightened with a hex key",
+                "count": len(chosen),
+            }
+        )
         return True
 
 
@@ -760,8 +840,8 @@ def _window(frame: Plane, width: float, z0: float, z1: float, reach: float) -> S
 def _exit_direction(sec: _Section2D, q: np.ndarray):
     """The in-plane direction (+-u, +-v) that leaves the face soonest, crossing the least material."""
     best = None
-    for e in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)):
-        e = np.array(e)
+    for step in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)):
+        e = np.array(step)
         far = np.abs(np.where(e > 0, sec.hi - q, q - sec.lo)).dot(np.abs(e))
         steps = np.arange(0.25, far + 1.0, 0.5)
         pts = q[None] + steps[:, None] * e[None]
@@ -807,16 +887,17 @@ def _centre_of(faces) -> Vector:
 
 # ---- naming and colours ----------------------------------------------------------------------
 
+
 def _shade(color: str, k: int) -> str:
     try:
-        r, g, b = (int(color[i: i + 2], 16) / 255 for i in (1, 3, 5))
+        r, g, b = (int(color[i : i + 2], 16) / 255 for i in (1, 3, 5))
     except (ValueError, IndexError):
         return color
-    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    h, light, s = colorsys.rgb_to_hls(r, g, b)
     shifts = [0.0, 0.14, -0.12, 0.24, -0.2, 0.08, -0.06, 0.3, -0.26]
-    l = min(0.88, max(0.18, l + shifts[k % len(shifts)] + 0.02 * (k // len(shifts))))
-    r, g, b = colorsys.hls_to_rgb(h, l, s)
-    return "#{:02X}{:02X}{:02X}".format(round(r * 255), round(g * 255), round(b * 255))
+    light = min(0.88, max(0.18, light + shifts[k % len(shifts)] + 0.02 * (k // len(shifts))))
+    r, g, b = colorsys.hls_to_rgb(h, light, s)
+    return f"#{round(r * 255):02X}{round(g * 255):02X}{round(b * 255):02X}"
 
 
 def _piece_names(name: str, pieces: list[_Piece]) -> list[str]:
@@ -827,7 +908,7 @@ def _piece_names(name: str, pieces: list[_Piece]) -> list[str]:
     if simple and axes_ok:
         names = []
         for path in levels:
-            words = [SIDE_WORDS[s[0]][s[1]] for s in sorted(path, key=lambda s: (-s[0]))]
+            words = [SIDE_WORDS[s[0]][s[1]] for s in sorted(path, key=lambda s: -s[0])]
             names.append(f"{name}, {' '.join(words)} piece")
         if len(set(names)) == n:
             return names
@@ -845,6 +926,7 @@ def _dims(size) -> str:
 
 # ---- main entry --------------------------------------------------------------------------------
 
+
 def split_oversized(model: Model, ctx, options: dict | None = None):
     """Split every printed part bigger than the printer; returns (model, messages)."""
     options = dict(options or {})
@@ -856,8 +938,9 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
             axis = AXES.index(str(s["axis"]).lower())
             seams.append((axis, float(s["at"]), s.get("part")))
         except (KeyError, ValueError, TypeError):
-            raise ValueError("Each seam needs an axis (x, y or z) and a position 'at' in mm, "
-                             "for example {axis: x, at: 300}.") from None
+            raise ValueError(
+                "Each seam needs an axis (x, y or z) and a position 'at' in mm, for example {axis: x, at: 300}."
+            ) from None
 
     todo = []
     for part in model.parts:
@@ -882,7 +965,7 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
         if entry is None:
             new_parts.append(part)
             continue
-        part, part_seams = entry
+        _, part_seams = entry
         size = size_of(part.shape)
         cuts_log: list = []
         kind = options.get("joint", "peg")
@@ -921,10 +1004,18 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
                 joiner.notes.append("peg_down")
         names = _piece_names(part.name, pieces)
         made = []
-        for i, (pc, nm) in enumerate(zip(pieces, names)):
-            p = Part3D(id=f"{part.id}.{i + 1}", name=nm, shape=pc.shape, color=_shade(part.color, i),
-                       printed=True, hardware=list(part.hardware) if i == 0 else [],
-                       face_down=part.face_down or hints.get(i), source_part=part.id, notes=part.notes)
+        for i, (pc, nm) in enumerate(zip(pieces, names, strict=False)):
+            p = Part3D(
+                id=f"{part.id}.{i + 1}",
+                name=nm,
+                shape=pc.shape,
+                color=_shade(part.color, i),
+                printed=True,
+                hardware=list(part.hardware) if i == 0 else [],
+                face_down=part.face_down or hints.get(i),
+                source_part=part.id,
+                notes=part.notes,
+            )
             made.append(p)
         new_parts += made
         split_map[part.id] = made
@@ -933,29 +1024,54 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
         for jd in joiner.joints:
             a, b = made[jd["a"]], made[jd["b"]]
             axis = jd["axis"]
-            joint = Joint(a=a.id, b=b.id, kind=jd["kind"], fit=jd.get("fit", joiner.fit),
-                          gap=jd.get("gap", joiner.gap) if jd["kind"] != "glue" else None,
-                          hardware=list(jd["hardware"]), at=_vt(jd["at"]), axis=_vt(axis),
-                          note=jd["note"], features=dict(jd["features"]))
+            joint = Joint(
+                a=a.id,
+                b=b.id,
+                kind=jd["kind"],
+                fit=jd.get("fit", joiner.fit),
+                gap=jd.get("gap", joiner.gap) if jd["kind"] != "glue" else None,
+                hardware=list(jd["hardware"]),
+                at=_vt(jd["at"]),
+                axis=_vt(axis),
+                note=jd["note"],
+                features=dict(jd["features"]),
+            )
             if "pin" in jd:
                 pin_count += 1
-                pin = Part3D(id=f"{part.id}.pin{pin_count}", name=f"{part.name}, pin {pin_count}",
-                             shape=jd["pin"], color=_shade(part.color, len(made) + pin_count),
-                             printed=True, source_part=part.id)
+                pin = Part3D(
+                    id=f"{part.id}.pin{pin_count}",
+                    name=f"{part.name}, pin {pin_count}",
+                    shape=jd["pin"],
+                    color=_shade(part.color, len(made) + pin_count),
+                    printed=True,
+                    source_part=part.id,
+                )
                 pin_parts.append((pin, [a.id, b.id]))
                 joint.note += f" (the pin is {pin.id})"
                 joint.features = {"pin": jd["pin"]}
                 joint.a, joint.b = pin.id, a.id
-                j2 = Joint(a=pin.id, b=b.id, kind="dowel", fit=joint.fit, gap=joint.gap, hardware=[],
-                           at=joint.at, axis=joint.axis, note=joint.note, features={"male": jd["pin"]})
+                j2 = Joint(
+                    a=pin.id,
+                    b=b.id,
+                    kind="dowel",
+                    fit=joint.fit,
+                    gap=joint.gap,
+                    hardware=[],
+                    at=joint.at,
+                    axis=joint.axis,
+                    note=joint.note,
+                    features={"male": jd["pin"]},
+                )
                 joint.features = {"male": jd["pin"]}
                 all_joints += [joint, j2]
                 continue
             all_joints.append(joint)
         messages += _messages(part, size, use, pieces, joiner, contacts, part_seams)
         if part_seams and any(not manual for _, _, manual in cuts_log):
-            messages.append("Part of it was still too big for the printer between your seams, "
-                            "so that part was cut again automatically.")
+            messages.append(
+                "Part of it was still too big for the printer between your seams, "
+                "so that part was cut again automatically."
+            )
 
     # Re-point the design's own joints at the piece nearest each joint.
     kept = []
@@ -967,17 +1083,21 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
                 continue
             spot = j.at
             if spot is None and j.features:
-                spot = next(iter(j.features.values())).bounding_box().tuple(center())
+                spot = next(iter(j.features.values())).bounding_box().center()
             if spot is None:
-                messages.append(f"The joint between {j.a} and {j.b} has no position, so it was dropped after "
-                                f"{pid} was split; give it 'at=' in the design to keep it.")
+                messages.append(
+                    f"The joint between {j.a} and {j.b} has no position, so it was dropped after "
+                    f"{pid} was split; give it 'at=' in the design to keep it."
+                )
                 ok = False
                 break
             pt = Vector(*spot)
             dists = sorted((p.shape.distance_to(pt), k) for k, p in enumerate(split_map[pid]))
             if len(dists) > 1 and abs(dists[0][0] - dists[1][0]) < 1e-6 and dists[0][0] > 1e-6:
-                messages.append(f"The joint between {j.a} and {j.b} sits exactly between two pieces of {pid}, "
-                                "so it was dropped; move it a little.")
+                messages.append(
+                    f"The joint between {j.a} and {j.b} sits exactly between two pieces of {pid}, "
+                    "so it was dropped; move it a little."
+                )
                 ok = False
                 break
             setattr(j, end, split_map[pid][dists[0][1]].id)
@@ -1001,56 +1121,70 @@ def split_oversized(model: Model, ctx, options: dict | None = None):
         j.b = rename.get(j.b, j.b)
         for old, new in sorted(rename.items(), key=lambda kv: -len(kv[0])):
             j.note = j.note.replace(f"(the pin is {old})", f"(the pin is {new})")
-    final = []
-    for msg in messages:
-        final.append(msg)
-    return model, final
+    return model, messages
 
 
-def _vt(v):
+def _vt(v) -> tuple[float, float, float] | None:
     if v is None:
         return None
-    t = tuple(v) if isinstance(v, Vector) else tuple(v)
-    return tuple(round(float(x), 3) for x in t)
+    return cast("tuple[float, float, float]", tuple(round(float(x), 3) for x in tuple(v)))
 
 
 def _messages(part, size, use, pieces, joiner, contacts, seams) -> list[str]:
     out = []
     n = len(pieces)
-    over = [i for i in range(3) if size[i] > sorted(use)[-1] + 1e-6] or \
-           [max(range(3), key=lambda i: size[i])]
+    over = [i for i in range(3) if size[i] > sorted(use)[-1] + 1e-6] or [max(range(3), key=lambda i: size[i])]
     kinds = sorted({j["kind"] for j in joiner.joints})
-    joined = {"peg": "pegs", "dowel": "printed pins" if joiner.dowel != "steel" else "steel dowel pins",
-              "screw": "screws and nuts", "dovetail": "sliding dovetails", "tongue-groove": "tongue-and-groove",
-              "glue": "glue"}
+    joined = {
+        "peg": "pegs",
+        "dowel": "printed pins" if joiner.dowel != "steel" else "steel dowel pins",
+        "screw": "screws and nuts",
+        "dovetail": "sliding dovetails",
+        "tongue-groove": "tongue-and-groove",
+        "glue": "glue",
+    }
     how = " and ".join(joined[k] for k in kinds) if kinds else "glue"
     what = _the(part.name)
     if seams:
         out.append(f"{what[0].upper() + what[1:]} is cut at the seams you chose into {n} pieces joined by {how}.")
     elif len(over) == 1:
         i = over[0]
-        out.append(f"{what[0].upper() + what[1:]} is {size[i]:.0f} mm {SIZE_WORDS[i]}, more than the "
-                   f"{max(use[0], use[1]):.0f} mm the printer allows, so it is split into {n} pieces joined by {how}.")
+        out.append(
+            f"{what[0].upper() + what[1:]} is {size[i]:.0f} mm {SIZE_WORDS[i]}, more than the "
+            f"{max(use[0], use[1]):.0f} mm the printer allows, so it is split into {n} pieces joined by {how}."
+        )
     else:
-        out.append(f"{what[0].upper() + what[1:]} is {_dims(size)} mm, more than the {use[0]:.0f} x {use[1]:.0f} x "
-                   f"{use[2]:.0f} mm the printer allows, so it is split into {n} pieces joined by {how}.")
+        out.append(
+            f"{what[0].upper() + what[1:]} is {_dims(size)} mm, more than the {use[0]:.0f} x {use[1]:.0f} x "
+            f"{use[2]:.0f} mm the printer allows, so it is split into {n} pieces joined by {how}."
+        )
     notes = joiner.notes
     for k in sorted({x.split(":", 1)[1] for x in notes if x.startswith("unknown:")}):
-        out.append(f"'{k}' isn't a joint the splitter can make, so pegs were used instead. "
-                   f"Use one of: {', '.join(KNOWN_JOINTS)}.")
+        out.append(
+            f"'{k}' isn't a joint the splitter can make, so pegs were used instead. "
+            f"Use one of: {', '.join(KNOWN_JOINTS)}."
+        )
     for k in sorted({x.split(":", 1)[1] for x in notes if x.startswith("ridge_fallback:")}):
-        out.append(f"A {k} didn't fit on every cut face (it needs a clear straight run across the face), "
-                   "so pegs were used there instead.")
+        out.append(
+            f"A {k} didn't fit on every cut face (it needs a clear straight run across the face), "
+            "so pegs were used there instead."
+        )
     if "screw_fallback" in notes:
         out.append("Some cut faces had no room for a screw and nut pocket, so pegs were used there instead.")
     if "glue" in notes:
         small = [c for c in contacts if any(j["kind"] == "glue" for j in joiner.joints)]
-        out.append(f"{notes.count('glue')} cut face{'s are' if notes.count('glue') > 1 else ' is'} too small for a "
-                   "joint (it needs room for a peg at least 4 mm across with walls around it), so those pieces "
-                   "are glued. Make the part thicker there for a stronger joint." if small else "")
+        out.append(
+            f"{notes.count('glue')} cut face{'s are' if notes.count('glue') > 1 else ' is'} too small for a "
+            "joint (it needs room for a peg at least 4 mm across with walls around it), so those pieces "
+            "are glued. Make the part thicker there for a stronger joint."
+            if small
+            else ""
+        )
     if "single" in notes:
         out.append("One cut face only had room for a single peg, so those pieces could twist; add a little glue.")
     if "peg_down" in notes:
-        out.append("On some pieces the cut face is also the biggest flat face, so the pegs may end up pointing "
-                   "down when printed; check the print orientation of those pieces.")
+        out.append(
+            "On some pieces the cut face is also the biggest flat face, so the pegs may end up pointing "
+            "down when printed; check the print orientation of those pieces."
+        )
     return [m for m in out if m]

@@ -11,6 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import matplotlib
 
@@ -21,6 +22,7 @@ import numpy as np  # noqa: E402
 import trimesh  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.colors import to_rgb  # noqa: E402
+from matplotlib.patches import Polygon  # noqa: E402
 
 from . import orient  # noqa: E402
 from .meshing import to_mesh  # noqa: E402
@@ -44,8 +46,15 @@ VIEWS = {
     "print": ((0.35, -0.75, 0.95), (0, 0, 1)),
     "plates": ((0.35, -0.75, 0.95), (0, 0, 1)),
 }
-VIEW_TITLES = {"front": "Front", "back": "Back", "left": "Left side", "right": "Right side",
-               "top": "Top", "bottom": "Bottom", "angled": "Angled"}
+VIEW_TITLES = {
+    "front": "Front",
+    "back": "Back",
+    "left": "Left side",
+    "right": "Right side",
+    "top": "Top",
+    "bottom": "Bottom",
+    "angled": "Angled",
+}
 
 
 @dataclass
@@ -67,7 +76,7 @@ class Item:
     def hi(self):
         return self.tris.reshape(-1, 3).max(axis=0)
 
-    def moved(self, offset) -> "Item":
+    def moved(self, offset) -> Item:
         return Item(self.id, self.tris + np.asarray(offset), self.normals, self.color, self.alpha, self.label)
 
 
@@ -80,8 +89,12 @@ def item_from_mesh(pid: str, mesh, color: str, alpha: float = 1.0, label: bool =
     normals = mesh.face_normals
     max_edge = max(float(mesh.extents.max()) / 20, 2.0)
     try:
-        verts, faces, index = trimesh.remesh.subdivide_to_size(
-            mesh.vertices, mesh.faces, max_edge=max_edge, max_iter=8, return_index=True)
+        verts, faces, index = cast(
+            "tuple[Any, Any, Any]",
+            trimesh.remesh.subdivide_to_size(
+                mesh.vertices, mesh.faces, max_edge=max_edge, max_iter=8, return_index=True
+            ),
+        )
         tris, normals = verts[faces], normals[index]
     except Exception:
         tris = mesh.vertices[mesh.faces]
@@ -106,8 +119,15 @@ def size_text(items: list[Item]) -> str:
     return " × ".join(f"{x:.0f}" if x >= 10 else f"{x:.1f}" for x in s) + " mm"
 
 
-def draw(ax, items: list[Item], view: str, extra_polys=None, labels: bool = False, transparent: bool = False,
-         pad: float = 0.04) -> None:
+def draw(
+    ax,
+    items: list[Item],
+    view: str,
+    extra_polys=None,
+    labels: bool = False,
+    transparent: bool = False,
+    pad: float = 0.04,
+) -> None:
     """Draw items into ``ax`` as seen from ``view`` (a key of VIEWS)."""
     v, right, up = _basis(view)
     light = -0.35 * right + 0.55 * up + 0.8 * v
@@ -134,8 +154,9 @@ def draw(ax, items: list[Item], view: str, extra_polys=None, labels: bool = Fals
     if extra_polys:
         for poly, fc, ec in extra_polys:
             p = np.stack([poly @ right, poly @ up], axis=1)
-            ax.add_patch(plt.Polygon(p, closed=True, facecolor=fc, edgecolor=ec, linewidth=1.2, zorder=0))
-            xs.append(p[:, 0]); ys.append(p[:, 1])
+            ax.add_patch(Polygon(p, closed=True, facecolor=fc, edgecolor=ec, linewidth=1.2, zorder=0))
+            xs.append(p[:, 0])
+            ys.append(p[:, 1])
     if polys:
         polys = np.concatenate(polys)
         colors = np.concatenate(colors)
@@ -144,12 +165,20 @@ def draw(ax, items: list[Item], view: str, extra_polys=None, labels: bool = Fals
         near = (depth - depth.min()) / span  # 0 far .. 1 near: far surfaces a little darker
         colors[:, :3] *= (0.78 + 0.22 * near)[:, None]
         order = np.argsort(depth, kind="stable")  # far first
-        coll = PolyCollection(polys[order], facecolors=colors[order], edgecolors=colors[order],
-                              linewidths=0.35, antialiaseds=True, zorder=2)
+        coll = PolyCollection(
+            list(polys[order]),
+            facecolors=colors[order],
+            edgecolors=colors[order],
+            linewidths=0.35,
+            antialiaseds=True,
+            zorder=2,
+        )
         ax.add_collection(coll)
-        xs.append(polys[..., 0].ravel()); ys.append(polys[..., 1].ravel())
+        xs.append(polys[..., 0].ravel())
+        ys.append(polys[..., 1].ravel())
     if xs:
-        x = np.concatenate(xs); y = np.concatenate(ys)
+        x = np.concatenate(xs)
+        y = np.concatenate(ys)
         w, h = max(x.max() - x.min(), 1e-6), max(y.max() - y.min(), 1e-6)
         ax.set_xlim(x.min() - pad * w, x.max() + pad * w)
         ax.set_ylim(y.min() - pad * h, y.max() + pad * h)
@@ -162,9 +191,18 @@ def draw(ax, items: list[Item], view: str, extra_polys=None, labels: bool = Fals
             c = (it.lo + it.hi) / 2
             # nudge the label towards the viewer so it sits on the visible side
             c = c + v * (np.abs((it.hi - it.lo) @ v) / 2)
-            ax.text(c @ right, c @ up, it.id, ha="center", va="center", fontsize=8, fontweight="bold",
-                    color="#111111", zorder=5,
-                    bbox=dict(boxstyle="round,pad=0.18", facecolor="white", edgecolor="none", alpha=0.8))
+            ax.text(
+                c @ right,
+                c @ up,
+                it.id,
+                ha="center",
+                va="center",
+                fontsize=8,
+                fontweight="bold",
+                color="#111111",
+                zorder=5,
+                bbox={"boxstyle": "round,pad=0.18", "facecolor": "white", "edgecolor": "none", "alpha": 0.8},
+            )
 
 
 def _figure(w=7.0, h=5.6):
@@ -181,13 +219,14 @@ def _save(fig, path: Path) -> Path:
 
 def _single(items, view, path, title, labels=False, transparent=False, extra=None) -> Path:
     fig = _figure()
-    ax = fig.add_axes([0.02, 0.02, 0.96, 0.88])
+    ax = fig.add_axes((0.02, 0.02, 0.96, 0.88))
     draw(ax, items, view, extra_polys=extra, labels=labels, transparent=transparent)
     fig.suptitle(title, fontsize=13, y=0.97)
     return _save(fig, path)
 
 
 # ---- layout helpers ---------------------------------------------------------------------
+
 
 def exploded_items(items: list[Item]) -> list[Item]:
     """Pull printed parts apart so every seam shows.
@@ -223,7 +262,6 @@ def pack_on_plates(items: list[Item], bed, spacing: float = 6.0):
     items and a list of bed outlines (as 4-corner polygons in 3D).
     """
     bw, bd = float(bed[0]), float(bed[1])
-    plates: list[list[Item]] = [[]]
     x = y = row_h = 0.0
     out = []
     plate = 0
@@ -253,8 +291,12 @@ def pack_on_plates(items: list[Item], bed, spacing: float = 6.0):
         dy = bd / 2 - (lo[1] + hi[1]) / 2
         centred += [g.moved([dx, dy, 0]) for g in group]
     out = centred
-    outlines = [np.array([[p * (bw + 25), 0, 0], [p * (bw + 25) + bw, 0, 0],
-                          [p * (bw + 25) + bw, bd, 0], [p * (bw + 25), bd, 0]]) for p in range(n_plates)]
+    outlines = [
+        np.array(
+            [[p * (bw + 25), 0, 0], [p * (bw + 25) + bw, 0, 0], [p * (bw + 25) + bw, bd, 0], [p * (bw + 25), bd, 0]]
+        )
+        for p in range(n_plates)
+    ]
     return out, outlines
 
 
@@ -262,7 +304,7 @@ def _print_picture(items: list[Item], bed, path: Path, title: str) -> Path:
     moved, outlines = pack_on_plates(items, bed)
     extra = [(o, "#F4F4F4", "#888888") for o in outlines]
     fig = _figure(7.5, 5.6)
-    ax = fig.add_axes([0.02, 0.02, 0.96, 0.88])
+    ax = fig.add_axes((0.02, 0.02, 0.96, 0.88))
     draw(ax, moved, "print", extra_polys=extra, labels=True)
     for k, o in enumerate(outlines):
         if len(outlines) > 1:
@@ -274,6 +316,7 @@ def _print_picture(items: list[Item], bed, path: Path, title: str) -> Path:
 
 
 # ---- the build's pictures ----------------------------------------------------------------
+
 
 def _model_items(model, tolerance=PICTURE_TOLERANCE) -> list[Item]:
     items = []
@@ -317,16 +360,23 @@ def build_pictures(model, out_dir, ctx) -> list[Path]:
     paths.append(_save(fig, out_dir / "overview.png"))
 
     if len(printed) > 1:
-        paths.append(_single(exploded_items(items), "angled", out_dir / "exploded.png",
-                             f"{model.name}, pulled apart", labels=True))
+        paths.append(
+            _single(
+                exploded_items(items), "angled", out_dir / "exploded.png", f"{model.name}, pulled apart", labels=True
+            )
+        )
     if printed:
         pitems = _printed_items(model, ctx.bed, ctx)
-        paths.append(_print_picture(pitems, ctx.bed, out_dir / "print.png",
-                                    f"As printed on the {ctx.bed[0]:g} × {ctx.bed[1]:g} mm bed"))
+        paths.append(
+            _print_picture(
+                pitems, ctx.bed, out_dir / "print.png", f"As printed on the {ctx.bed[0]:g} × {ctx.bed[1]:g} mm bed"
+            )
+        )
     return paths
 
 
 # ---- pictures from the last build ----------------------------------------------------------
+
 
 def _resolve(info: list[dict], names, what: str) -> set[str]:
     ids = set()
@@ -406,9 +456,8 @@ def pictures(project, parts=None, exploded=False, views=None, hide=None, transpa
         if loaded:
             allv = np.concatenate([m.vertices for _, m in loaded])
             cut = (allv.min(axis=0) + allv.max(axis=0)) / 2
-    keep_normal = {"x": (-1, 0, 0), "y": (0, 1, 0), "z": (0, 0, -1)}
 
-    def to_item(p, mesh, section_ok=True) -> Item:
+    def to_item(p, mesh, section_ok=True) -> Item | None:
         printed = p["printed"]
         if section and section_ok and cut is not None:
             mesh = _cut(mesh, cut, section)

@@ -1,7 +1,18 @@
 from fabricator import doctor
 
-NAMES = ["Python", "CAD engine", "Mesh tools", "Git", "Bambu Studio", "Printer profile",
-         "Settings saved", "Projects folder", "OrcaSlicer", "Claude Code in VS Code", "Internet"]
+NAMES = [
+    "Python",
+    "CAD engine",
+    "Mesh tools",
+    "Git",
+    "Bambu Studio",
+    "Printer profile",
+    "Settings saved",
+    "Projects folder",
+    "OrcaSlicer",
+    "Claude Code in VS Code",
+    "Internet",
+]
 
 
 def _clean(monkeypatch, tmp_path):
@@ -25,8 +36,10 @@ def test_run_never_raises_without_slicer(tmp_path, monkeypatch):
 
 def test_failing_check_is_reported(tmp_path, monkeypatch):
     _clean(monkeypatch, tmp_path)
+
     def boom():
         raise RuntimeError("x")
+
     assert doctor._check("T", boom)[1] == "warn"
 
 

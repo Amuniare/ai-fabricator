@@ -6,6 +6,8 @@ Layout of a project folder::
         project.yaml     what was asked for, parameters, measurements, notes
         design.py        the design code (the real source of the object)
         sources.yaml     where outside measurements and files came from
+        notes.md         the user's own notes about this object (Claude reads it)
+        README.md        a page about the object with its pictures, remade after every build
         imports/         downloaded or supplied model files (data only, never run)
         build/           everything the build makes (pictures, parts, checks)
         slices/          sliced print files
@@ -31,7 +33,16 @@ from . import settings as settings_mod
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 PROJECT_FILE = "project.yaml"
 DESIGN_FILE = "design.py"
-GENERATED = ["build/", "slices/", "package/", "__pycache__/", "*.pyc"]
+NOTES_FILE = "notes.md"
+GENERATED = ["build/", "slices/", "package/", "README.md", "__pycache__/", "*.pyc"]
+
+NOTES_TEMPLATE = """# Notes: {name}
+
+Write anything about this object here: why you made it, what you changed, how the print
+came out. Claude reads this file when you work on this project, and adds to it when you
+ask it to remember something.
+
+"""
 
 DESIGN_TEMPLATE = '''"""{name}
 
@@ -67,7 +78,7 @@ class Project:
 
     # ---- finding ------------------------------------------------------------
     @classmethod
-    def find(cls, name_or_path: str | None) -> "Project":
+    def find(cls, name_or_path: str | None) -> Project:
         """Find a project by folder name, display name, part of a name, or path."""
         root = settings_mod.home()
         if not name_or_path:
@@ -92,7 +103,7 @@ class Project:
         raise ProjectError(f"No project called '{name_or_path}' in {root}.")
 
     @classmethod
-    def all(cls) -> list["Project"]:
+    def all(cls) -> list[Project]:
         root = settings_mod.home()
         return sorted(
             (cls(p.parent) for p in root.glob(f"*/{PROJECT_FILE}")),
@@ -100,7 +111,7 @@ class Project:
         )
 
     @classmethod
-    def latest(cls) -> "Project | None":
+    def latest(cls) -> Project | None:
         projects = cls.all()
         if not projects:
             return None
@@ -108,8 +119,9 @@ class Project:
 
     # ---- creating -------------------------------------------------------------
     @classmethod
-    def create(cls, name: str, description: str = "", parameters: dict | None = None,
-               example: str | None = None) -> "Project":
+    def create(
+        cls, name: str, description: str = "", parameters: dict | None = None, example: str | None = None
+    ) -> Project:
         """Start a project, optionally from one of the examples (its design and parameters)."""
         root = settings_mod.home()
         source = None
@@ -127,8 +139,7 @@ class Project:
             "name": name,
             "created": date.today().isoformat(),
             "request": description,
-            "parameters": parameters
-            or {"width": 60.0, "depth": 40.0, "height": 20.0, "corner_radius": 3.0},
+            "parameters": parameters or {"width": 60.0, "depth": 40.0, "height": 20.0, "corner_radius": 3.0},
             "measurements": {},
             "split": {"joint": "peg", "fit": "snug"},
             "notes": [],
@@ -147,6 +158,7 @@ class Project:
                 DESIGN_TEMPLATE.format(name=name, description=description or name), encoding="utf-8"
             )
         (path / "sources.yaml").write_text("sources: []\nimports: []\n", encoding="utf-8")
+        (path / NOTES_FILE).write_text(NOTES_TEMPLATE.format(name=name), encoding="utf-8")
         (path / ".gitignore").write_text("\n".join(GENERATED) + "\n", encoding="utf-8")
         project = cls(path)
         project._git("init", "-q", "-b", "main")
@@ -187,9 +199,21 @@ class Project:
         if shutil.which("git") is None:
             raise ProjectError("Git isn't installed, so versions can't be saved. Run setup again.")
         result = subprocess.run(
-            ["git", "-c", "user.name=Fabricator", "-c", "user.email=fabricator@localhost",
-             "-c", "commit.gpgsign=false", *args],
-            cwd=self.path, capture_output=True, text=True, encoding="utf-8",
+            [
+                "git",
+                "-c",
+                "user.name=Fabricator",
+                "-c",
+                "user.email=fabricator@localhost",
+                "-c",
+                "commit.gpgsign=false",
+                *args,
+            ],
+            cwd=self.path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         )
         if check and result.returncode != 0:
             raise ProjectError(f"Saving versions failed: {result.stderr.strip()}")

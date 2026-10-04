@@ -3,6 +3,7 @@
 import base64
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import trimesh
@@ -15,7 +16,7 @@ from fabricator.settings import Settings
 BAMBU = Path.home() / "tools/bambu/bambu-studio"
 RESOURCES = Path.home() / "tools/bambu/squashfs-root/resources"
 
-TWO = '''
+TWO = """
 from fabricator.design import *
 
 def build(p, ctx):
@@ -24,7 +25,7 @@ def build(p, ctx):
     b = m.add(Pos(0, 0, 15) * Box(10, 10, 10), "Top block")
     m.join(a, b, "screw", hardware=["M3x12 screw"], note="Tighten gently.")
     return m
-'''
+"""
 
 
 @pytest.fixture
@@ -51,11 +52,11 @@ def check_folder(root: Path):
     guide = (root / "guide.html").read_text(encoding="utf-8")
     for text in ("Two Blocks", "Base plate", "Top block", "M3x12 screw", "Join Base plate", "Tighten gently."):
         assert text in guide
-    assert "http://" not in guide.replace("http://www.w3.org", "") and "src=\"http" not in guide
+    assert "http://" not in guide.replace("http://www.w3.org", "") and 'src="http' not in guide
     for uri in re.findall(r'src="data:image/png;base64,([^"]+)"', guide):
         assert base64.b64decode(uri, validate=True)[:4] == b"\x89PNG"
     scene = trimesh.load(str(root / "complete_model.glb"))
-    assert len(scene.geometry) == 2
+    assert len(cast(Any, scene).geometry) == 2
 
 
 def test_package_without_slicing(project):

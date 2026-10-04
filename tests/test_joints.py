@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from build123d import Box, Pos
@@ -25,7 +26,7 @@ B = Pos(50, 0, 0) * Box(100, 40, 20)
 def test_peg_gap_matches_fit(ctx):
     r = joints.peg(A, B, at=[(0, -10, 0), (0, 10, 0)], direction=(1, 0, 0), ctx=ctx, diameter=6)
     assert r.kind == "peg" and r.gap == ctx.fit("snug")
-    assert r.a.volume > A.volume and r.b.volume < B.volume
+    assert cast(Any, r.a).volume > A.volume and cast(Any, r.b).volume < B.volume
     males = r.features["male"].solids()
     assert len(males) == 2
     for m in males:
@@ -76,7 +77,7 @@ def test_dovetail_and_tongue(ctx):
     assert d.axis == (0.0, 0.0, 1.0)
     # the tongue is clipped to the face: it doesn't stick out past the part
     bb = d.a.bounding_box()
-    assert bb.min.Z == pytest.approx(-10) and bb.max.Z == pytest.approx(10)
+    assert pytest.approx(-10) == bb.min.Z and pytest.approx(10) == bb.max.Z
     t = joints.tongue_groove(A, B, at=(0, 0, 0), direction=(1, 0, 0), along=(0, 1, 0), ctx=ctx, length=20)
     assert t.b.distance_to(t.features["male"]) == pytest.approx(ctx.fit("snug"), abs=1e-6)
 
